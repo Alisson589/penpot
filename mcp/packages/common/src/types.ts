@@ -118,6 +118,23 @@ export interface WidgetResponsiveOverride {
 
 export type WidgetResponsiveSpec = Partial<Record<WidgetBreakpointKey, WidgetResponsiveOverride>>;
 
+export interface WidgetChildLayoutSpec {
+    absolute?: boolean;
+    horizontalSizing?: "fill" | "auto" | "fix";
+    verticalSizing?: "fill" | "auto" | "fix";
+    alignSelf?: "center" | "auto" | "start" | "end" | "stretch";
+    horizontalMargin?: number;
+    verticalMargin?: number;
+    topMargin?: number;
+    rightMargin?: number;
+    bottomMargin?: number;
+    leftMargin?: number;
+    minWidth?: number | null;
+    maxWidth?: number | null;
+    minHeight?: number | null;
+    maxHeight?: number | null;
+}
+
 export interface WidgetNode {
     id?: string;
     type: string;
@@ -125,6 +142,7 @@ export interface WidgetNode {
     props?: Record<string, unknown>;
     tokens?: Record<string, string>;
     layout?: WidgetLayoutSpec;
+    childLayout?: WidgetChildLayoutSpec;
     responsive?: WidgetResponsiveSpec;
     style?: {
         fills?: Array<Record<string, unknown>>;

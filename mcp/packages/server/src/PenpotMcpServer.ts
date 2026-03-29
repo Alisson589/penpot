@@ -14,6 +14,8 @@ import { ImportImageTool } from "./tools/ImportImageTool";
 import { ReplServer } from "./ReplServer";
 import { ApiDocs } from "./ApiDocs";
 import { CreateWidgetTreeTool } from "./tools/CreateWidgetTreeTool";
+import { FindLibraryComponentsTool } from "./tools/FindLibraryComponentsTool";
+import { InstantiateLibraryComponentTool } from "./tools/InstantiateLibraryComponentTool";
 
 /**
  * Session context for request-scoped data.
@@ -146,6 +148,8 @@ export class PenpotMcpServer {
     private initTools(): ToolInfo[] {
         const toolInstances: Tool<any>[] = [
             new ExecuteCodeTool(this),
+            new FindLibraryComponentsTool(this),
+            new InstantiateLibraryComponentTool(this),
             new CreateWidgetTreeTool(this),
             new HighLevelOverviewTool(this),
             new PenpotApiInfoTool(this, this.apiDocs),

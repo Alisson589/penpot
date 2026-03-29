@@ -85,7 +85,7 @@ export class CreateWidgetTreeTool extends Tool<CreateWidgetTreeArgs> {
     public getToolDescription(): string {
         return (
             "Creates a semantic widget tree in Penpot using grouped containers, plugin metadata, and layout intent. " +
-            "Prefer this over execute_code when building app-like UI that should behave like reusable Flutter-style widgets."
+            "Use this after checking connected libraries; prefer library components first, then compose manual widget trees only for shells, glue, or missing primitives."
         );
     }
 

@@ -232,6 +232,19 @@ Libraries in Penpot are collections of reusable design assets (components, color
 They enable design systems and consistent styling across projects.
 Each Penpot file has its own local library and can connect to external shared libraries.
 
+Priority rule for MCP-driven UI creation:
+  * ALWAYS inspect the current file's connected libraries before creating manual widget structures.
+  * If a suitable library component already exists, instantiate that component instead of drawing a manual substitute.
+  * Use manual widget construction only when:
+    - no matching library component exists
+    - you need a shell/layout wrapper around library instances
+    - you intentionally need a detached custom composition
+  * Prefer preserving the design system semantics of the library:
+    - use library components first
+    - use tokens second
+    - use raw shapes only as a fallback
+  * For app-like UI, treat manual widget trees as composition glue around reusable library components, not as the primary source of visual primitives.
+
 Accessing libraries: via `penpot.library` (type: `LibraryContext`):
   * `penpot.library.local` (type: `Library`) - The current file's own library
   * `penpot.library.connected` (type: `Library[]`) - Array of already-connected external libraries
@@ -272,6 +285,7 @@ Using library components:
     After instantiation, modify the instance's properties as desired.
   * get the reference to the main component shape:
     `const mainShape: Shape = component.mainInstance();`
+  * prefer component instantiation over manual recreation whenever the component is already in a connected library.
 
 Adding a component to a library:
 ```

@@ -33,6 +33,23 @@ type WidgetResponsiveOverride = {
 
 type WidgetResponsiveSpec = Partial<Record<WidgetBreakpointKey, WidgetResponsiveOverride>>;
 
+type WidgetChildLayoutSpec = {
+    absolute?: boolean;
+    horizontalSizing?: "fill" | "auto" | "fix";
+    verticalSizing?: "fill" | "auto" | "fix";
+    alignSelf?: "center" | "auto" | "start" | "end" | "stretch";
+    horizontalMargin?: number;
+    verticalMargin?: number;
+    topMargin?: number;
+    rightMargin?: number;
+    bottomMargin?: number;
+    leftMargin?: number;
+    minWidth?: number | null;
+    maxWidth?: number | null;
+    minHeight?: number | null;
+    maxHeight?: number | null;
+};
+
 type WidgetNode = {
     id?: string;
     type: string;
@@ -40,6 +57,7 @@ type WidgetNode = {
     props?: Record<string, any>;
     tokens?: Record<string, string>;
     layout?: WidgetLayoutSpec;
+    childLayout?: WidgetChildLayoutSpec;
     responsive?: WidgetResponsiveSpec;
     style?: {
         fills?: Fill[];
@@ -60,6 +78,26 @@ type WidgetTreeNodeResult = {
 type WidgetTreeResult = {
     root: WidgetTreeNodeResult;
     nodes: WidgetTreeNodeResult[];
+};
+
+type LibraryComponentSummary = {
+    libraryId: string;
+    libraryName: string;
+    componentId: string;
+    componentName: string;
+    componentPath: string | null;
+    isVariant: boolean;
+    variantProps: Record<string, string> | null;
+};
+
+type InstantiateLibraryComponentParams = {
+    libraryName?: string;
+    componentNameContains?: string;
+    componentPathContains?: string;
+    x?: number;
+    y?: number;
+    pageId?: string;
+    detach?: boolean;
 };
 
 export class PenpotUtils {
@@ -233,6 +271,96 @@ export class PenpotUtils {
 
     public static getPageByName(name: string): Page | null {
         return this.findPage((page) => page.name.toLowerCase() === name.toLowerCase());
+    }
+
+    public static listLibraryComponents(): LibraryComponentSummary[] {
+        const libraries = [penpot.library.local, ...penpot.library.connected];
+        return libraries.flatMap((library) =>
+            library.components.map((component: any) => ({
+                libraryId: library.id,
+                libraryName: library.name,
+                componentId: component.id,
+                componentName: component.name,
+                componentPath: component.path ?? null,
+                isVariant: typeof component.isVariant === "function" ? component.isVariant() : false,
+                variantProps: component.variantProps ?? null,
+            }))
+        );
+    }
+
+    public static findLibraryComponents(options: {
+        libraryName?: string;
+        componentNameContains?: string;
+        componentPathContains?: string;
+        limit?: number;
+    }): LibraryComponentSummary[] {
+        const libraryName = options.libraryName?.toLowerCase();
+        const componentNameContains = options.componentNameContains?.toLowerCase();
+        const componentPathContains = options.componentPathContains?.toLowerCase();
+
+        return this.listLibraryComponents()
+            .filter((entry) => {
+                if (libraryName && !entry.libraryName.toLowerCase().includes(libraryName)) {
+                    return false;
+                }
+                if (componentNameContains && !entry.componentName.toLowerCase().includes(componentNameContains)) {
+                    return false;
+                }
+                if (
+                    componentPathContains &&
+                    !(entry.componentPath ?? "").toLowerCase().includes(componentPathContains)
+                ) {
+                    return false;
+                }
+                return true;
+            })
+            .slice(0, options.limit ?? 50);
+    }
+
+    public static instantiateLibraryComponent(params: InstantiateLibraryComponentParams): object {
+        const matches = this.findLibraryComponents({
+            libraryName: params.libraryName,
+            componentNameContains: params.componentNameContains,
+            componentPathContains: params.componentPathContains,
+            limit: 1,
+        });
+
+        if (matches.length === 0) {
+            throw new Error("No matching library component found");
+        }
+
+        const match = matches[0];
+        const library = [penpot.library.local, ...penpot.library.connected].find((entry) => entry.id === match.libraryId);
+        if (!library) {
+            throw new Error(`Library not found: ${match.libraryName}`);
+        }
+
+        const component: any = library.components.find((entry: any) => entry.id === match.componentId);
+        if (!component) {
+            throw new Error(`Component not found: ${match.componentName}`);
+        }
+
+        const instance = component.instance();
+        const page = params.pageId ? this.getPageById(params.pageId) : penpot.currentPage;
+        if (!page) {
+            throw new Error("No target page available for component instantiation");
+        }
+
+        penpot.openPage(page);
+        instance.x = params.x ?? 120;
+        instance.y = params.y ?? 120;
+        (page.root as any).appendChild(instance);
+
+        if (params.detach) {
+            instance.detach();
+        }
+
+        return {
+            match,
+            instanceId: instance.id,
+            detached: params.detach ?? false,
+            isComponentInstance: instance.isComponentInstance(),
+        };
     }
 
     public static getPageForShape(shape: Shape): Page | null {
@@ -655,6 +783,7 @@ export class PenpotUtils {
         this.applyWidgetMetadata(shape, node, parent);
         this.applyWidgetSizing(shape, node.layout);
         this.applyWidgetStyle(shape, node.style);
+        this.applyWidgetChildLayout(shape, node, parent);
 
         const childSummaries: WidgetTreeNodeResult[] = [];
         if (shape.type === "board" && node.children && node.children.length > 0) {
@@ -770,6 +899,9 @@ export class PenpotUtils {
         if (node.layout) {
             metadata[`${this.WIDGET_PLUGIN_PREFIX}.layout`] = JSON.stringify(node.layout);
         }
+        if (node.childLayout) {
+            metadata[`${this.WIDGET_PLUGIN_PREFIX}.childLayout`] = JSON.stringify(node.childLayout);
+        }
 
         for (const [key, value] of Object.entries(metadata)) {
             shape.setPluginData(key, value);
@@ -808,15 +940,102 @@ export class PenpotUtils {
         }
     }
 
+    private static applyWidgetChildLayout(shape: Shape, node: WidgetNode, parent: Board | null): void {
+        if (!parent || (!parent.flex && !parent.grid)) {
+            return;
+        }
+
+        const layoutChild = (shape as any).layoutChild;
+        if (!layoutChild) {
+            return;
+        }
+
+        const childLayout = node.childLayout ?? {};
+        layoutChild.absolute = childLayout.absolute ?? false;
+        layoutChild.horizontalSizing = this.resolveChildHorizontalSizing(shape, node, childLayout);
+        layoutChild.verticalSizing = this.resolveChildVerticalSizing(shape, node, childLayout);
+
+        if (childLayout.alignSelf) {
+            layoutChild.alignSelf = childLayout.alignSelf;
+        }
+        if (typeof childLayout.horizontalMargin === "number") {
+            layoutChild.horizontalMargin = childLayout.horizontalMargin;
+        }
+        if (typeof childLayout.verticalMargin === "number") {
+            layoutChild.verticalMargin = childLayout.verticalMargin;
+        }
+        if (typeof childLayout.topMargin === "number") {
+            layoutChild.topMargin = childLayout.topMargin;
+        }
+        if (typeof childLayout.rightMargin === "number") {
+            layoutChild.rightMargin = childLayout.rightMargin;
+        }
+        if (typeof childLayout.bottomMargin === "number") {
+            layoutChild.bottomMargin = childLayout.bottomMargin;
+        }
+        if (typeof childLayout.leftMargin === "number") {
+            layoutChild.leftMargin = childLayout.leftMargin;
+        }
+        if ("minWidth" in childLayout) {
+            layoutChild.minWidth = childLayout.minWidth ?? null;
+        }
+        if ("maxWidth" in childLayout) {
+            layoutChild.maxWidth = childLayout.maxWidth ?? null;
+        }
+        if ("minHeight" in childLayout) {
+            layoutChild.minHeight = childLayout.minHeight ?? null;
+        }
+        if ("maxHeight" in childLayout) {
+            layoutChild.maxHeight = childLayout.maxHeight ?? null;
+        }
+    }
+
+    private static resolveChildHorizontalSizing(
+        shape: Shape,
+        node: WidgetNode,
+        childLayout: WidgetChildLayoutSpec
+    ): "fill" | "auto" | "fix" {
+        if (childLayout.horizontalSizing) {
+            return childLayout.horizontalSizing;
+        }
+        if (node.layout?.width === "fill") {
+            return "fill";
+        }
+        if (node.layout?.width === "hug") {
+            return "auto";
+        }
+        if (shape.type === "text") {
+            return "auto";
+        }
+        return "fix";
+    }
+
+    private static resolveChildVerticalSizing(
+        shape: Shape,
+        node: WidgetNode,
+        childLayout: WidgetChildLayoutSpec
+    ): "fill" | "auto" | "fix" {
+        if (childLayout.verticalSizing) {
+            return childLayout.verticalSizing;
+        }
+        if (node.layout?.height === "fill") {
+            return "fill";
+        }
+        if (node.layout?.height === "hug") {
+            return "auto";
+        }
+        if (shape.type === "text") {
+            return "auto";
+        }
+        return "fix";
+    }
+
     private static applyWidgetLayout(container: Board, layout: WidgetLayoutSpec): void {
         if (layout.kind === "row" || layout.kind === "column") {
             const flex = this.addFlexLayout(container, layout.kind);
             flex.wrap = layout.wrap ?? "nowrap";
             if (layout.align) {
                 flex.alignItems = layout.align;
-            }
-            if (layout.crossAlign) {
-                flex.justifyItems = layout.crossAlign;
             }
             if (layout.justifyContent) {
                 flex.justifyContent = layout.justifyContent;
@@ -887,6 +1106,7 @@ export class PenpotUtils {
                     name: node.name || "Dashboard Shell",
                     layout: node.layout || {
                         kind: "column",
+                        height: "hug",
                         gap: 24,
                         padding: 24,
                     },
@@ -904,8 +1124,21 @@ export class PenpotUtils {
                     name: node.name || "Metric Card",
                     props: {
                         width: 256,
-                        height: 140,
+                        height: 156,
                         ...props,
+                    },
+                    layout: {
+                        kind: "column",
+                        width: "fill",
+                        height: "hug",
+                        gap: 16,
+                        padding: { top: 0, right: 20, bottom: 20, left: 20 },
+                        ...node.layout,
+                    },
+                    childLayout: {
+                        horizontalSizing: "fill",
+                        verticalSizing: "fix",
+                        ...node.childLayout,
                     },
                     style: {
                         fills: [{ fillColor: "#FFFFFF", fillOpacity: 1 }],
@@ -916,35 +1149,62 @@ export class PenpotUtils {
                         {
                             type: "rectangle",
                             name: "Accent",
-                            props: { width: 256, height: 8, x: 0, y: 0 },
+                            props: { width: 216, height: 8 },
+                            childLayout: {
+                                horizontalSizing: "fill",
+                                verticalSizing: "fix",
+                            },
                             style: {
                                 fills: [{ fillColor: accent, fillOpacity: 1 }],
-                                radius: 20,
+                                radius: 999,
                             },
                         },
                         {
-                            type: "text",
-                            name: "Label",
-                            props: {
-                                text: String(props.label ?? "Label"),
-                                x: 24,
-                                y: 34,
-                                fontSize: 15,
-                                fontWeight: "400",
+                            type: "board",
+                            name: "Content Stack",
+                            layout: {
+                                kind: "column",
+                                width: "fill",
+                                height: "hug",
+                                gap: 8,
                             },
-                            style: { fills: [{ fillColor: "#6B7280", fillOpacity: 1 }] },
-                        },
-                        {
-                            type: "text",
-                            name: "Value",
-                            props: {
-                                text: String(props.value ?? "Value"),
-                                x: 24,
-                                y: 70,
-                                fontSize: 30,
-                                fontWeight: "700",
+                            childLayout: {
+                                horizontalSizing: "fill",
+                                verticalSizing: "auto",
                             },
-                            style: { fills: [{ fillColor: "#111827", fillOpacity: 1 }] },
+                            style: {
+                                fills: [{ fillColor: "#FFFFFF", fillOpacity: 0 }],
+                            },
+                            children: [
+                                {
+                                    type: "text",
+                                    name: "Label",
+                                    props: {
+                                        text: String(props.label ?? "Label"),
+                                        fontSize: 15,
+                                        fontWeight: "400",
+                                    },
+                                    childLayout: {
+                                        horizontalSizing: "auto",
+                                        verticalSizing: "auto",
+                                    },
+                                    style: { fills: [{ fillColor: "#6B7280", fillOpacity: 1 }] },
+                                },
+                                {
+                                    type: "text",
+                                    name: "Value",
+                                    props: {
+                                        text: String(props.value ?? "Value"),
+                                        fontSize: 30,
+                                        fontWeight: "700",
+                                    },
+                                    childLayout: {
+                                        horizontalSizing: "auto",
+                                        verticalSizing: "auto",
+                                    },
+                                    style: { fills: [{ fillColor: "#111827", fillOpacity: 1 }] },
+                                },
+                            ],
                         },
                     ],
                 };
