@@ -146,6 +146,7 @@ Parar de criar tokens de forma improvisada e passar a estruturar o sistema antes
 - o agente consegue planejar o sistema antes de criar UI
 - o MCP sugere nomes coerentes
 - o input aceito pelo usuário é mais semântico e menos dependente do formato do Penpot
+- a limitação atual de `theme.activeSets` via plugin API fica documentada e não bloqueia o roadmap
 
 ## Fase 3: Metadata de Sistema para Export
 
@@ -232,6 +233,7 @@ Parar de deixar a aplicação de tokens implícita demais.
 - se mexer demais na IR, volta o risco de acoplar export ao layout interno do Penpot
 - se beautificar demais o Dart, pode perder fidelidade semântica do canvas
 - se tokens forem tratados só no export e não na criação, a UI continua inconsistente
+- o catálogo de themes/sets do Penpot pode exigir semântica adicional fora do que a plugin API expõe hoje; isso deve ser tratado como investigação isolada ou plugin dedicado, não como bloqueio da pipeline principal
 
 ## Decisões Já Fechadas
 

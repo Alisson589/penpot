@@ -238,6 +238,18 @@ When working with boards, slots, or nested containers, follow these rules strict
     - a board existing in the current page tree
     - a stale id from an older session or an earlier version of the page
     - a plugin session that is connected but attached to a different page context
+
+# Design Tokens
+
+When a task involves colors, spacing, radius, sizing, or typography, work token-first:
+
+  * Before creating UI at scale, use `plan_design_token_system` to define the intended token system.
+  * Use `suggest_design_token_names` when token naming is still undecided.
+  * Use `normalize_design_token_payload` before `upsert_design_token` when values come from free-form prompts or external sources.
+  * Use `setup_design_token_system` to create an initial Penpot token setup with sets and themes.
+  * Keep `upsert_design_token` as the low-level mutation tool.
+  * Treat `_Tokens` pages as documentation only. The real source of truth is the file token catalog.
+  * Do not use `shadow` tokens via MCP for now.
   * After rebuilding or reloading the MCP plugin, assume previous MCP sessions may be stale. Re-initialize the MCP session and re-check `penpot.currentFile` / `penpot.currentPage` before mutating the document.
   * When instantiating a library component into a specific container, always prefer `instantiate_library_component` with `targetShapeId`.
   * When docking library components into slots, ensure the slot itself participates in a layout and has internal padding, so the component aligns relative to the slot instead of floating inside it.

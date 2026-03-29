@@ -23,6 +23,10 @@ import { InspectCanvasTool } from "./tools/InspectCanvasTool";
 import { InspectDesignTokensTool } from "./tools/InspectDesignTokensTool";
 import { EnsureDesignTokenStructureTool } from "./tools/EnsureDesignTokenStructureTool";
 import { UpsertDesignTokenTool } from "./tools/UpsertDesignTokenTool";
+import { PlanDesignTokenSystemTool } from "./tools/PlanDesignTokenSystemTool";
+import { SuggestDesignTokenNamesTool } from "./tools/SuggestDesignTokenNamesTool";
+import { NormalizeDesignTokenPayloadTool } from "./tools/NormalizeDesignTokenPayloadTool";
+import { SetupDesignTokenSystemTool } from "./tools/SetupDesignTokenSystemTool";
 import { EnsurePageStructureTool } from "./tools/EnsurePageStructureTool";
 import { CreateMainComponentFromShapeTool } from "./tools/CreateMainComponentFromShapeTool";
 import { CreateVariantGroupFromComponentsTool } from "./tools/CreateVariantGroupFromComponentsTool";
@@ -162,6 +166,10 @@ export class PenpotMcpServer {
             new PluginConnectionStatusTool(this),
             new InspectCanvasTool(this),
             new InspectDesignTokensTool(this),
+            new PlanDesignTokenSystemTool(this),
+            new SuggestDesignTokenNamesTool(this),
+            new NormalizeDesignTokenPayloadTool(this),
+            new SetupDesignTokenSystemTool(this),
             new EnsureDesignTokenStructureTool(this),
             new UpsertDesignTokenTool(this),
             new EnsurePageStructureTool(this),
