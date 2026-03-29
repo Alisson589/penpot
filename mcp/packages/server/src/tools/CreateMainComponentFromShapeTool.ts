@@ -40,8 +40,9 @@ export class CreateMainComponentFromShapeTool extends Tool<CreateMainComponentFr
 
     public getToolDescription(): string {
         return (
-            "Promotes a board/group/shape into a local Penpot main component, moves the main instance to `_Components`, " +
-            "and optionally leaves an instance behind on the original page."
+            "Promotes a board/group/shape into a local Penpot library component. " +
+            "The component becomes reusable from Components/Assets; the plugin context may keep the main instance on the source page, " +
+            "so do not rely on cross-page moves here."
         );
     }
 

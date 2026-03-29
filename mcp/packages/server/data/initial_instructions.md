@@ -150,6 +150,9 @@ Boards can have layout systems that automatically control the positioning and sp
      - To discover valid values, check available fonts in `penpot.fonts: FontContext`
          - `FontContext` provides `Font` instances; each font has property `variants: FontVariant[]` 
          - Example: Determine available weights for a font using `penpot.fonts.findByName("Laila").variants.map(v => v.fontWeight)`
+     - Do not assume generic CSS keywords like `bold` are always valid for the current Penpot font variant.
+       Prefer resolving to an available font variant first. If a helper normalizes aliases, map common values such as
+       `regular -> 400`, `medium -> 500`, `semibold -> 600`, `bold -> 700`.
      - To apply a `Font` to a `Text` instance and set all font properties at once:
          - `font.applyToText(text: Text, variant?: FontVariant)`
          - `applyToRange(range: TextRange, variant?: FontVariant)`
@@ -407,6 +410,10 @@ Use `variantContainer.appendChild(mainInstance)` to move a component's main inst
 # Design Tokens
 
 Design tokens are reusable design values (colors, dimensions, typography, etc.) for consistent styling.
+
+Important:
+* The real source of truth for tokens/themes/sets is the token catalog in the file library, not a canvas page.
+* Use `_Tokens` only as optional documentation/reference if the team wants a visible page. Do not treat that page as the authoritative token store.
 
 The token library: `penpot.library.local.tokens` (type: `TokenCatalog`)
   * `sets: TokenSet[]` - Token collections (order matters for precedence)

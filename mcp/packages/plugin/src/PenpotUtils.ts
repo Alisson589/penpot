@@ -387,12 +387,7 @@ export class PenpotUtils {
             pageId: string | null;
             pageName: string | null;
         };
-        componentPageInstance?: {
-            id: string;
-            name: string;
-            pageId: string | null;
-            pageName: string | null;
-        } | null;
+        note?: string | null;
         sourceInstance?: {
             id: string;
             name: string;
@@ -459,18 +454,6 @@ export class PenpotUtils {
         mainInstance.setPluginData(`${this.WIDGET_PLUGIN_PREFIX}.componentId`, component.id);
         mainInstance.setPluginData(`${this.WIDGET_PLUGIN_PREFIX}.componentName`, component.name);
 
-        let componentPageInstance: Shape | null = null;
-        if (mainPage?.id !== targetPage.id) {
-            componentPageInstance = component.instance();
-            componentPageInstance.name = params.componentName ?? componentPageInstance.name;
-            (targetPage.root as any).appendChild(componentPageInstance);
-            componentPageInstance.x = 120;
-            componentPageInstance.y = 120;
-            componentPageInstance.setPluginData(`${this.WIDGET_PLUGIN_PREFIX}.componentRole`, "component-page-instance");
-            componentPageInstance.setPluginData(`${this.WIDGET_PLUGIN_PREFIX}.componentId`, component.id);
-            componentPageInstance.setPluginData(`${this.WIDGET_PLUGIN_PREFIX}.componentName`, component.name);
-        }
-
         let sourceInstance: Shape | null = null;
         if (params.leaveInstanceOnSourcePage !== false && mainPage?.id !== sourcePage.id) {
             sourceInstance = component.instance();
@@ -503,14 +486,10 @@ export class PenpotUtils {
                 pageId: mainPage?.id ?? null,
                 pageName: mainPage?.name ?? null,
             },
-            componentPageInstance: componentPageInstance
-                ? {
-                      id: componentPageInstance.id,
-                      name: componentPageInstance.name,
-                      pageId: targetPage.id,
-                      pageName: targetPage.name,
-                  }
-                : null,
+            note:
+                mainPage?.id !== targetPage.id
+                    ? `Penpot plugin context did not move the main component across pages; the component was created in the local library and remains referenced from ${mainPage?.name ?? "the source page"}.`
+                    : null,
             sourceInstance: sourceInstance
                 ? {
                       id: sourceInstance.id,
@@ -1122,6 +1101,55 @@ export class PenpotUtils {
         return overview;
     }
 
+    public static inspectDesignTokens(): {
+        sets: Array<{
+            id: string;
+            name: string;
+            active: boolean;
+            tokenCount: number;
+            tokens: Array<{
+                name: string;
+                type: string;
+                value: unknown;
+                resolvedValue: unknown;
+            }>;
+        }>;
+        themes: Array<{
+            id: string;
+            group: string;
+            name: string;
+            active: boolean;
+            activeSetIds: string[];
+            activeSetNames: string[];
+        }>;
+    } {
+        // @ts-ignore
+        const tokenCatalog = penpot.library.local.tokens;
+
+        return {
+            sets: tokenCatalog.sets.map((set: any) => ({
+                id: set.id,
+                name: set.name,
+                active: set.active,
+                tokenCount: set.tokens.length,
+                tokens: set.tokens.map((token: any) => ({
+                    name: token.name,
+                    type: token.type,
+                    value: token.value,
+                    resolvedValue: token.resolvedValue,
+                })),
+            })),
+            themes: tokenCatalog.themes.map((theme: any) => ({
+                id: theme.id,
+                group: theme.group,
+                name: theme.name,
+                active: theme.active,
+                activeSetIds: theme.activeSets.map((set: any) => set.id),
+                activeSetNames: theme.activeSets.map((set: any) => set.name),
+            })),
+        };
+    }
+
     public static createWidgetTree(rootNode: WidgetNode, pageId?: string): WidgetTreeResult {
         const page = pageId ? this.getPageById(pageId) : penpot.currentPage;
         if (!page) {
@@ -1270,11 +1298,107 @@ export class PenpotUtils {
         if (typeof node.props?.fontSize === "number") {
             text.fontSize = String(node.props.fontSize);
         }
-        if (typeof node.props?.fontWeight === "string") {
-            text.fontWeight = node.props.fontWeight;
+        if (typeof node.props?.fontFamily === "string") {
+            text.fontFamily = node.props.fontFamily;
+        }
+        if (node.props?.fontStyle === "normal" || node.props?.fontStyle === "italic") {
+            text.fontStyle = node.props.fontStyle;
+        }
+        if (typeof node.props?.fontWeight === "string" || typeof node.props?.fontWeight === "number") {
+            this.applySafeFontWeight(text, node.props.fontWeight);
         }
         text.fills = node.style?.fills ?? [{ fillColor: "#111827", fillOpacity: 1 }];
         return text;
+    }
+
+    private static applySafeFontWeight(text: Text, requestedWeight: string | number): void {
+        const normalizedRequestedWeight = this.normalizeFontWeightAlias(requestedWeight);
+        const fontFamily = text.fontFamily;
+        if (!fontFamily) {
+            text.fontWeight = normalizedRequestedWeight;
+            return;
+        }
+
+        const font = penpot.fonts.findByName(fontFamily);
+        if (!font) {
+            text.fontWeight = normalizedRequestedWeight;
+            return;
+        }
+
+        const preferredStyle = text.fontStyle ?? "normal";
+        const exactVariant =
+            font.variants.find(
+                (variant) =>
+                    this.normalizeFontWeightAlias(variant.fontWeight) === normalizedRequestedWeight &&
+                    variant.fontStyle === preferredStyle
+            ) ??
+            font.variants.find((variant) => this.normalizeFontWeightAlias(variant.fontWeight) === normalizedRequestedWeight) ??
+            this.findClosestFontVariant(font.variants, normalizedRequestedWeight, preferredStyle);
+
+        if (exactVariant) {
+            font.applyToText(text, exactVariant);
+            return;
+        }
+
+        text.fontWeight = normalizedRequestedWeight;
+    }
+
+    private static findClosestFontVariant(
+        variants: Array<{ name: string; fontVariantId: string; fontWeight: string; fontStyle: "normal" | "italic" }>,
+        requestedWeight: string,
+        preferredStyle: string
+    ): { name: string; fontVariantId: string; fontWeight: string; fontStyle: "normal" | "italic" } | null {
+        const requestedNumeric = this.fontWeightToNumeric(requestedWeight);
+        const sorted = [...variants]
+            .filter((variant) => variant.fontStyle === preferredStyle || variants.every((entry) => entry.fontStyle !== preferredStyle))
+            .sort((a, b) => {
+                const distanceA = Math.abs(this.fontWeightToNumeric(a.fontWeight) - requestedNumeric);
+                const distanceB = Math.abs(this.fontWeightToNumeric(b.fontWeight) - requestedNumeric);
+                return distanceA - distanceB;
+            });
+
+        return sorted[0] ?? variants[0] ?? null;
+    }
+
+    private static normalizeFontWeightAlias(weight: string | number): string {
+        const raw = String(weight).trim().toLowerCase();
+        const aliases: Record<string, string> = {
+            thin: "100",
+            hairline: "100",
+            extralight: "200",
+            "extra-light": "200",
+            ultralight: "200",
+            "ultra-light": "200",
+            light: "300",
+            normal: "400",
+            regular: "400",
+            book: "400",
+            medium: "500",
+            semibold: "600",
+            "semi-bold": "600",
+            demi: "600",
+            demibold: "600",
+            "demi-bold": "600",
+            bold: "700",
+            extrabold: "800",
+            "extra-bold": "800",
+            ultrabold: "800",
+            "ultra-bold": "800",
+            black: "900",
+            heavy: "900",
+        };
+
+        return aliases[raw] ?? raw;
+    }
+
+    private static fontWeightToNumeric(weight: string): number {
+        const normalized = this.normalizeFontWeightAlias(weight);
+        const numeric = Number.parseInt(normalized, 10);
+        if (!Number.isNaN(numeric)) {
+            return numeric;
+        }
+
+        return 400;
     }
 
     private static applyWidgetMetadata(shape: Shape, node: WidgetNode, parent: Board | null): void {
