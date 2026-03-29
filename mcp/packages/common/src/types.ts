@@ -139,6 +139,8 @@ export interface WidgetNode {
     id?: string;
     type: string;
     name?: string;
+    role?: string;
+    slot?: string;
     props?: Record<string, unknown>;
     tokens?: Record<string, string>;
     layout?: WidgetLayoutSpec;
@@ -168,4 +170,45 @@ export interface WidgetTreeNodeResult {
 export interface WidgetTreeResult {
     root: WidgetTreeNodeResult;
     nodes: WidgetTreeNodeResult[];
+}
+
+export interface FlutterExportSpacingIntent {
+    gap?: number;
+    padding?: number | WidgetPadding;
+    margin?: number | WidgetPadding;
+}
+
+export interface FlutterExportLayoutIntent {
+    kind: "stack" | "row" | "column" | "grid" | "component";
+    width?: number | "fill" | "hug";
+    height?: number | "fill" | "hug";
+    align?: "start" | "end" | "center" | "stretch";
+    crossAlign?: "start" | "end" | "center" | "stretch";
+    justifyContent?: "start" | "center" | "end" | "space-between" | "space-around" | "space-evenly" | "stretch";
+    wrap?: "wrap" | "nowrap";
+    columns?: number;
+}
+
+export interface FlutterExportNode {
+    widgetId: string;
+    sequenceId?: number;
+    widgetType: string;
+    displayName: string;
+    sourceShapeId: string;
+    parentWidgetId?: string;
+    slot?: string;
+    sourceLibrary?: string;
+    sourceComponentId?: string;
+    sourceComponentName?: string;
+    sourceComponentPath?: string | null;
+    layoutIntent?: FlutterExportLayoutIntent;
+    spacingIntent?: FlutterExportSpacingIntent;
+    props?: Record<string, unknown>;
+    tokens?: Record<string, string>;
+    children: FlutterExportNode[];
+}
+
+export interface FlutterExportTree {
+    root: FlutterExportNode;
+    nodes: FlutterExportNode[];
 }

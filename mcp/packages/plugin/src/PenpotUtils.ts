@@ -64,6 +64,8 @@ type WidgetNode = {
     id?: string;
     type: string;
     name?: string;
+    role?: string;
+    slot?: string;
     props?: Record<string, any>;
     tokens?: Record<string, string>;
     layout?: WidgetLayoutSpec;
@@ -110,6 +112,13 @@ type InstantiateLibraryComponentParams = {
     pageId?: string;
     detach?: boolean;
     childLayout?: WidgetChildLayoutSpec;
+};
+
+type CreateMainComponentParams = {
+    shapeId: string;
+    componentName?: string;
+    componentPageName?: string;
+    leaveInstanceOnSourcePage?: boolean;
 };
 
 type DockShapeIntoContainerParams = {
@@ -302,6 +311,215 @@ export class PenpotUtils {
 
     public static getPageByName(name: string): Page | null {
         return this.findPage((page) => page.name.toLowerCase() === name.toLowerCase());
+    }
+
+    public static ensurePageStructure(options?: {
+        includeTokens?: boolean;
+        includeComponents?: boolean;
+        includeDocumentation?: boolean;
+        screens?: string[];
+        openPageName?: string;
+    }): {
+        pages: { id: string; name: string; created: boolean }[];
+        activePage: { id: string; name: string } | null;
+    } {
+        const wantedPages: string[] = [];
+
+        if (options?.includeTokens !== false) {
+            wantedPages.push("_Tokens");
+        }
+        if (options?.includeComponents !== false) {
+            wantedPages.push("_Components");
+        }
+        if (options?.includeDocumentation !== false) {
+            wantedPages.push("_Documentation");
+        }
+
+        for (const screen of options?.screens ?? []) {
+            const trimmed = screen.trim();
+            if (!trimmed) {
+                continue;
+            }
+            wantedPages.push(trimmed.startsWith("Screens/") ? trimmed : `Screens/${trimmed}`);
+        }
+
+        const uniquePageNames = [...new Set(wantedPages)];
+        const ensuredPages = uniquePageNames.map((pageName) => {
+            const existing = this.getPageByName(pageName);
+            if (existing) {
+                return { page: existing, created: false };
+            }
+
+            const page = penpot.createPage();
+            page.name = pageName;
+            return { page, created: true };
+        });
+
+        let activePage: Page | null = penpot.currentPage ?? null;
+        if (options?.openPageName) {
+            const pageToOpen = this.getPageByName(options.openPageName);
+            if (pageToOpen) {
+                penpot.openPage(pageToOpen);
+                activePage = pageToOpen;
+            }
+        }
+
+        return {
+            pages: ensuredPages.map(({ page, created }) => ({
+                id: page.id,
+                name: page.name,
+                created,
+            })),
+            activePage: activePage ? { id: activePage.id, name: activePage.name } : null,
+        };
+    }
+
+    public static createMainComponentFromShape(params: CreateMainComponentParams): {
+        component: {
+            id: string;
+            name: string;
+            path: string;
+            libraryId: string;
+        };
+        mainInstance: {
+            id: string;
+            name: string;
+            pageId: string | null;
+            pageName: string | null;
+        };
+        componentPageInstance?: {
+            id: string;
+            name: string;
+            pageId: string | null;
+            pageName: string | null;
+        } | null;
+        sourceInstance?: {
+            id: string;
+            name: string;
+            pageId: string | null;
+            pageName: string | null;
+        } | null;
+    } {
+        const shape = this.findShapeById(params.shapeId);
+        if (!shape) {
+            throw new Error(`Shape not found: ${params.shapeId}`);
+        }
+
+        const existingComponent = shape.component();
+        if (existingComponent) {
+            const main = existingComponent.mainInstance();
+            const mainPage = this.getPageForShape(main);
+            return {
+                component: {
+                    id: existingComponent.id,
+                    name: existingComponent.name,
+                    path: existingComponent.path,
+                    libraryId: existingComponent.libraryId,
+                },
+                mainInstance: {
+                    id: main.id,
+                    name: main.name,
+                    pageId: mainPage?.id ?? null,
+                    pageName: mainPage?.name ?? null,
+                },
+                sourceInstance: shape.id === main.id ? null : {
+                    id: shape.id,
+                    name: shape.name,
+                    pageId: this.getPageForShape(shape)?.id ?? null,
+                    pageName: this.getPageForShape(shape)?.name ?? null,
+                },
+            };
+        }
+
+        const sourcePage = this.getPageForShape(shape);
+        if (!sourcePage) {
+            throw new Error("Source shape is not attached to a page");
+        }
+
+        const originalBounds = this.getBounds(shape);
+        const sourceParent = shape.parent as any;
+        const sourceIndex = typeof shape.parentIndex === "number" ? shape.parentIndex : null;
+
+        const component = penpot.library.local.createComponent([shape]);
+        component.name = params.componentName ?? component.name;
+
+        const mainInstance = component.mainInstance();
+        mainInstance.name = params.componentName ?? mainInstance.name;
+        const targetPageName = params.componentPageName ?? "_Components";
+        const targetPage = this.getPageByName(targetPageName) ?? (() => {
+            const page = penpot.createPage();
+            page.name = targetPageName;
+            return page;
+        })();
+        const mainPage = this.getPageForShape(mainInstance);
+
+        mainInstance.x = 120;
+        mainInstance.y = 120;
+        mainInstance.setPluginData(`${this.WIDGET_PLUGIN_PREFIX}.componentRole`, "main");
+        mainInstance.setPluginData(`${this.WIDGET_PLUGIN_PREFIX}.componentId`, component.id);
+        mainInstance.setPluginData(`${this.WIDGET_PLUGIN_PREFIX}.componentName`, component.name);
+
+        let componentPageInstance: Shape | null = null;
+        if (mainPage?.id !== targetPage.id) {
+            componentPageInstance = component.instance();
+            componentPageInstance.name = params.componentName ?? componentPageInstance.name;
+            (targetPage.root as any).appendChild(componentPageInstance);
+            componentPageInstance.x = 120;
+            componentPageInstance.y = 120;
+            componentPageInstance.setPluginData(`${this.WIDGET_PLUGIN_PREFIX}.componentRole`, "component-page-instance");
+            componentPageInstance.setPluginData(`${this.WIDGET_PLUGIN_PREFIX}.componentId`, component.id);
+            componentPageInstance.setPluginData(`${this.WIDGET_PLUGIN_PREFIX}.componentName`, component.name);
+        }
+
+        let sourceInstance: Shape | null = null;
+        if (params.leaveInstanceOnSourcePage !== false && mainPage?.id !== sourcePage.id) {
+            sourceInstance = component.instance();
+            sourceInstance.name = params.componentName ?? sourceInstance.name;
+            if (sourceParent && typeof sourceParent.appendChild === "function") {
+                sourceParent.appendChild(sourceInstance);
+                if (sourceIndex !== null && typeof sourceInstance.setParentIndex === "function") {
+                    sourceInstance.setParentIndex(sourceIndex);
+                }
+            } else {
+                (sourcePage.root as any).appendChild(sourceInstance);
+            }
+            sourceInstance.x = originalBounds.x;
+            sourceInstance.y = originalBounds.y;
+            sourceInstance.setPluginData(`${this.WIDGET_PLUGIN_PREFIX}.componentRole`, "instance");
+            sourceInstance.setPluginData(`${this.WIDGET_PLUGIN_PREFIX}.componentId`, component.id);
+            sourceInstance.setPluginData(`${this.WIDGET_PLUGIN_PREFIX}.componentName`, component.name);
+        }
+
+        return {
+            component: {
+                id: component.id,
+                name: component.name,
+                path: component.path,
+                libraryId: component.libraryId,
+            },
+            mainInstance: {
+                id: mainInstance.id,
+                name: mainInstance.name,
+                pageId: mainPage?.id ?? null,
+                pageName: mainPage?.name ?? null,
+            },
+            componentPageInstance: componentPageInstance
+                ? {
+                      id: componentPageInstance.id,
+                      name: componentPageInstance.name,
+                      pageId: targetPage.id,
+                      pageName: targetPage.name,
+                  }
+                : null,
+            sourceInstance: sourceInstance
+                ? {
+                      id: sourceInstance.id,
+                      name: sourceInstance.name,
+                      pageId: sourcePage.id,
+                      pageName: sourcePage.name,
+                  }
+                : null,
+        };
     }
 
     private static findShapeInSubtreeById(shape: Shape, id: string): Shape | null {
@@ -1062,8 +1280,9 @@ export class PenpotUtils {
     private static applyWidgetMetadata(shape: Shape, node: WidgetNode, parent: Board | null): void {
         const page = penpot.currentPage;
         const sequence = page ? this.allocateNextWidgetSequence(page) : null;
+        const plainName = this.getPlainWidgetName(node.name || this.humanizeType(node.type));
         shape.name = this.ensureWidgetDisplayName(
-            node.name || this.humanizeType(node.type),
+            plainName,
             node.id || this.slugify(node.name || node.type),
             sequence
         );
@@ -1071,7 +1290,7 @@ export class PenpotUtils {
         const metadata: Record<string, string> = {
             [`${this.WIDGET_PLUGIN_PREFIX}.type`]: node.type,
             [`${this.WIDGET_PLUGIN_PREFIX}.version`]: "1",
-            [`${this.WIDGET_PLUGIN_PREFIX}.name`]: node.name || node.type,
+            [`${this.WIDGET_PLUGIN_PREFIX}.name`]: plainName,
         };
 
         metadata[`${this.WIDGET_PLUGIN_PREFIX}.id`] = node.id || this.slugify(node.name || node.type);
@@ -1080,6 +1299,12 @@ export class PenpotUtils {
         }
         if (parent) {
             metadata[`${this.WIDGET_PLUGIN_PREFIX}.parentId`] = parent.id;
+        }
+        if (node.role) {
+            metadata[`${this.WIDGET_PLUGIN_PREFIX}.role`] = node.role;
+        }
+        if (node.slot) {
+            metadata[`${this.WIDGET_PLUGIN_PREFIX}.slot`] = node.slot;
         }
         if (node.props) {
             metadata[`${this.WIDGET_PLUGIN_PREFIX}.props`] = JSON.stringify(node.props);
@@ -1441,7 +1666,7 @@ export class PenpotUtils {
     ): WidgetNode {
         const nodeSpacingSystem = this.resolveSpacingSystem(node, spacingSystem);
         const ensuredId = node.id || this.buildWidgetId(node, path);
-        const ensuredName = this.ensureWidgetDisplayName(node.name || this.humanizeType(node.type), ensuredId);
+        const ensuredName = this.getPlainWidgetName(node.name || this.humanizeType(node.type));
         const preparedChildren = node.children?.map((child, index) =>
             this.prepareWidgetNode(child, [...path, index], depth + 1, nodeSpacingSystem)
         );
@@ -1450,6 +1675,8 @@ export class PenpotUtils {
             ...node,
             id: ensuredId,
             name: ensuredName,
+            role: node.role ?? this.inferWidgetRole(node),
+            slot: node.slot,
             props: {
                 ...(node.props ?? {}),
                 ...(depth === 0 ? { spacingSystem: nodeSpacingSystem } : {}),
@@ -1457,9 +1684,7 @@ export class PenpotUtils {
             children: preparedChildren,
         };
 
-        if (preparedNode.layout) {
-            preparedNode.layout = this.applyDefaultSpacingToLayout(preparedNode, depth, nodeSpacingSystem);
-        }
+        preparedNode.layout = this.normalizeWidgetLayout(preparedNode, depth, nodeSpacingSystem);
 
         if (!preparedNode.childLayout && depth > 0) {
             preparedNode.childLayout = this.defaultChildLayoutForNode(preparedNode);
@@ -1485,12 +1710,15 @@ export class PenpotUtils {
         };
     }
 
-    private static applyDefaultSpacingToLayout(
+    private static normalizeWidgetLayout(
         node: WidgetNode,
         depth: number,
         spacingSystem: WidgetSpacingSystem
-    ): WidgetLayoutSpec {
-        const layout = { ...node.layout! };
+    ): WidgetLayoutSpec | undefined {
+        const layout = node.layout ? { ...node.layout } : this.inferDefaultLayout(node, depth, spacingSystem);
+        if (!layout) {
+            return undefined;
+        }
         const semanticName = `${node.type} ${node.name}`.toLowerCase();
 
         if (layout.gap === undefined && (layout.kind === "row" || layout.kind === "column" || layout.kind === "grid")) {
@@ -1509,6 +1737,76 @@ export class PenpotUtils {
         }
 
         return layout;
+    }
+
+    private static inferDefaultLayout(
+        node: WidgetNode,
+        depth: number,
+        spacingSystem: WidgetSpacingSystem
+    ): WidgetLayoutSpec | undefined {
+        if (node.type !== "board") {
+            return undefined;
+        }
+
+        const semanticName = `${node.name ?? ""} ${node.role ?? ""} ${node.slot ?? ""}`.toLowerCase();
+        const hasChildren = (node.children?.length ?? 0) > 0;
+
+        if (!hasChildren && !semanticName.includes("slot")) {
+            return undefined;
+        }
+
+        if (semanticName.includes("slot")) {
+            return {
+                kind: "row",
+                gap: 0,
+                padding: spacingSystem.xs,
+                align: "center",
+                justifyContent: "center",
+            };
+        }
+
+        if (/toolbar|actions|tabs|metrics|row/.test(semanticName)) {
+            return {
+                kind: "row",
+                gap: semanticName.includes("toolbar") ? spacingSystem.xs : spacingSystem.md,
+                padding: depth === 0 ? spacingSystem.lg : spacingSystem.md,
+                align: "center",
+            };
+        }
+
+        return {
+            kind: "column",
+            gap: spacingSystem.md,
+            padding: depth === 0 ? spacingSystem.lg : spacingSystem.md,
+        };
+    }
+
+    private static inferWidgetRole(node: WidgetNode): string | undefined {
+        const semanticName = `${node.type} ${node.name ?? ""}`.toLowerCase();
+
+        if (semanticName.includes("slot")) {
+            return "slot";
+        }
+        if (semanticName.includes("header")) {
+            return "header";
+        }
+        if (semanticName.includes("toolbar")) {
+            return "toolbar";
+        }
+        if (semanticName.includes("card")) {
+            return "card";
+        }
+        if (semanticName.includes("panel")) {
+            return "panel";
+        }
+        if (semanticName.includes("dashboard")) {
+            return "dashboard";
+        }
+        if (node.type === "board" && (node.children?.length ?? 0) > 0) {
+            return "container";
+        }
+
+        return undefined;
     }
 
     private static defaultChildLayoutForNode(node: WidgetNode): WidgetChildLayoutSpec {
@@ -1619,12 +1917,20 @@ export class PenpotUtils {
     }
 
     private static getWidgetDisplayName(node: WidgetNode): string {
-        return this.ensureWidgetDisplayName(node.name || this.humanizeType(node.type), node.id || this.slugify(node.type));
+        return this.ensureWidgetDisplayName(
+            this.getPlainWidgetName(node.name || this.humanizeType(node.type)),
+            node.id || this.slugify(node.type)
+        );
     }
 
     private static ensureWidgetDisplayName(name: string, id: string, sequence?: number | null): string {
         const suffix = sequence !== undefined && sequence !== null ? ` [#${sequence} | ${id}]` : ` [${id}]`;
-        return name.endsWith(suffix) ? name : `${name}${suffix}`;
+        const plainName = this.getPlainWidgetName(name);
+        return plainName.endsWith(suffix) ? plainName : `${plainName}${suffix}`;
+    }
+
+    private static getPlainWidgetName(name: string): string {
+        return name.replace(/\s+\[(?:#\d+\s+\|\s+)?[^\]]+\]\s*$/g, "").trim();
     }
 
     private static humanizeType(type: string): string {

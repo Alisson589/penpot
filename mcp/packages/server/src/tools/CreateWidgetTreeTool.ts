@@ -57,6 +57,8 @@ const widgetNodeSchema: z.ZodType<any> = z.lazy(() =>
         id: z.string().optional(),
         type: z.string().min(1),
         name: z.string().optional(),
+        role: z.string().optional(),
+        slot: z.string().optional(),
         props: z.record(z.string(), z.unknown()).optional(),
         tokens: z.record(z.string(), z.string()).optional(),
         layout: widgetLayoutSchema.optional(),

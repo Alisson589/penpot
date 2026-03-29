@@ -20,6 +20,8 @@ import { DockShapeIntoContainerTool } from "./tools/DockShapeIntoContainerTool";
 import { InstantiateLibraryComponentIntoSlotTool } from "./tools/InstantiateLibraryComponentIntoSlotTool";
 import { PluginConnectionStatusTool } from "./tools/PluginConnectionStatusTool";
 import { InspectCanvasTool } from "./tools/InspectCanvasTool";
+import { EnsurePageStructureTool } from "./tools/EnsurePageStructureTool";
+import { CreateMainComponentFromShapeTool } from "./tools/CreateMainComponentFromShapeTool";
 
 /**
  * Session context for request-scoped data.
@@ -153,6 +155,8 @@ export class PenpotMcpServer {
         const toolInstances: Tool<any>[] = [
             new PluginConnectionStatusTool(this),
             new InspectCanvasTool(this),
+            new EnsurePageStructureTool(this),
+            new CreateMainComponentFromShapeTool(this),
             new ExecuteCodeTool(this),
             new FindLibraryComponentsTool(this),
             new InstantiateLibraryComponentTool(this),
