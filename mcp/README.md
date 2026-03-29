@@ -225,6 +225,89 @@ To add the Penpot MCP server to a Claude Code project, issue the command
 
     claude mcp add penpot -t http http://localhost:4401/mcp
 
+## Recommended Build Flow
+
+When using the MCP for UI construction, follow this sequence:
+
+1. `plugin_connection_status`
+2. `inspect_project_setup`
+3. `plan_ui_build`
+4. confirm structural changes with the user
+5. `confirm_structural_setup` and/or `ensure_frame_scaffolding`
+6. create reusable components in `_Components`
+7. promote them with `create_main_component_from_shape`
+8. find and place them as instances on `Screens/*`
+9. use overrides for content changes instead of duplicating components
+
+This keeps the file aligned with how Penpot expects components and screens to be organized.
+
+## Tool Guide
+
+Below is the practical role of the main MCP tools added in this workflow:
+
+- `plugin_connection_status`
+  - verifies that the Penpot plugin is connected before any action
+- `inspect_project_setup`
+  - lists pages, token catalog state, connected libraries, selection, and local components
+- `plan_ui_build`
+  - creates a non-mutating plan before changing tokens, pages, frames, or screens
+- `confirm_structural_setup`
+  - performs approved structural setup actions after user confirmation
+- `ensure_page_structure`
+  - ensures `_Components`, `_Documentation`, `_Tokens`, and `Screens/*` pages exist
+- `ensure_frame_scaffolding`
+  - creates parent frames/boards for screens or component work
+- `find_library_components`
+  - searches connected libraries like Pencil or Lucide
+- `find_local_components`
+  - searches reusable components already created in the local file library
+- `create_widget_tree`
+  - builds semantic shells, sections, slots, and safe container structures
+- `create_main_component_from_shape`
+  - promotes a prepared frame in `_Components` into a local library component
+- `instantiate_library_component_into_slot`
+  - places a connected-library component into a slot/container
+- `instantiate_local_component_into_slot`
+  - places a local library component instance into a slot/container on a screen
+- `apply_instance_text_overrides`
+  - updates instance text content without duplicating the main component
+- `apply_design_tokens_to_shape`
+  - binds real Penpot tokens to a shape
+- `inspect_design_token_usage`
+  - finds hardcoded values that should use tokens
+- `inspect_unsafe_construction_patterns`
+  - lints a page for risky construction patterns
+- `export_to_flutter`
+  - builds an intermediate Flutter-oriented tree from the Penpot canvas
+- `generate_flutter_dart`
+  - generates Dart code from the export tree
+
+## `execute_code` Safety
+
+`execute_code` is powerful, but it should be treated as an advanced escape hatch, not the default UI builder.
+
+Use `execute_code` for:
+- targeted inspection that existing tools do not expose yet
+- controlled cleanup or page switching
+- one-off diagnostics inside the connected Penpot file
+- validating hypotheses about the Penpot Plugin API
+
+Do **not** use `execute_code` as the default way to build screens or components.
+
+Avoid these patterns:
+- building full screens directly with raw Plugin API calls
+- creating components on screen pages instead of `_Components`
+- duplicating components by content instead of using instances and overrides
+- writing layout child properties manually unless the MCP already normalizes them
+- hardcoding colors, font sizes, spacing, or radius instead of binding tokens
+
+If a page starts throwing `Internal Error` after a raw scripted build, run:
+- `inspect_project_setup`
+- `inspect_unsafe_construction_patterns`
+- `inspect_design_token_usage`
+
+Those tools help identify the most common unsafe patterns before you continue editing.
+
 ## Repository Structure
 
 This repository is a monorepo containing four main components:

@@ -41,8 +41,8 @@ export class CreateMainComponentFromShapeTool extends Tool<CreateMainComponentFr
     public getToolDescription(): string {
         return (
             "Promotes a board/group/shape into a local Penpot library component. " +
-            "The component becomes reusable from Components/Assets; the plugin context may keep the main instance on the source page, " +
-            "so do not rely on cross-page moves here."
+            "Create the source frame on `_Components` first, then promote it and consume it from the local Assets/library in screens. " +
+            "Do not use this to create main components directly from screen pages."
         );
     }
 

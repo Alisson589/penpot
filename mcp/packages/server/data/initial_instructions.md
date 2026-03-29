@@ -1,6 +1,21 @@
 You have access to Penpot tools in order to interact with a Penpot design project directly.
 As a precondition, the user must connect the Penpot design project to the MCP server using the Penpot MCP Plugin.
 
+# UI Build Protocol
+
+When the user asks to create a screen, widget, dashboard, or other UI:
+
+  * First call `plugin_connection_status`.
+  * Then call `inspect_project_setup`.
+  * Before creating missing pages, frames, or token systems, produce a non-mutating plan with `plan_ui_build`.
+  * Structural creation requires explicit user confirmation. After confirmation, use `confirm_structural_setup` and/or `ensure_frame_scaffolding`.
+  * Do not create visual content before parent frames/boards exist.
+  * Treat the Penpot token catalog as the source of truth. `_Tokens` pages are documentation only.
+  * Prefer library components first, then build shells/slots with `create_widget_tree`.
+  * Build reusable widgets in `_Components` first. Promote them to local components there, then place only instances on screen pages.
+  * Do not create separate main components just because the content differs. Use one main component plus instance overrides, or variants when the structure changes.
+  * Text inside a component must live inside an inner frame with layout. Do not leave text layers as free absolute children of the component root.
+
 # Executing Code
 
 One of your key tools is the `execute_code` tool, which allows you to run JavaScript code using the Penpot Plugin API
@@ -200,6 +215,7 @@ General pointers for working with Penpot designs:
   * To get an overview of a single page, use `penpotUtils.shapeStructure(page.root, 3)`.
     Note that `penpot.root` refers to the current page only. When working across pages, first determine the relevant page(s).
   * Use `penpotUtils.findShapes()` or `penpotUtils.findShape()` with predicates to locate elements efficiently.
+  * Use `find_local_components` before placing local assets on a screen, and `apply_instance_text_overrides` when only the content differs across instances.
 
 Common tasks - Quick Reference (ALWAYS use penpotUtils for these):
   * Find all images:
@@ -252,10 +268,13 @@ When a task involves colors, spacing, radius, sizing, or typography, work token-
   * Do not use `shadow` tokens via MCP for now.
   * After rebuilding or reloading the MCP plugin, assume previous MCP sessions may be stale. Re-initialize the MCP session and re-check `penpot.currentFile` / `penpot.currentPage` before mutating the document.
   * When instantiating a library component into a specific container, always prefer `instantiate_library_component` with `targetShapeId`.
+  * For icons, prefer `find_library_components` and `instantiate_library_component_into_slot` with `matchMode: "exact"` or `requireExactMatch: true`.
+  * Do not silently accept near-miss icon matches such as `bell-off` for `bell` unless the user asked for fuzzy matching.
   * When docking library components into slots, ensure the slot itself participates in a layout and has internal padding, so the component aligns relative to the slot instead of floating inside it.
   * If `targetShapeId` is provided and the target cannot be found, treat that as a hard error and investigate the page tree; do NOT silently fall back to the page root.
   * After targeted instantiation, verify the result by checking the returned `parentId` and `targetShapeId`.
   * Treat partial top-level creation as a failure mode. If a widget creation call fails partway through, the MCP should roll back the newly created top-level shapes from that call instead of leaving residue on the canvas.
+  * If `export_shape` fails for a complex board, call `diagnose_export_shape` before retrying or falling back to another shape.
 
 # Widget Identity And Page Identity
 

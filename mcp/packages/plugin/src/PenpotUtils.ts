@@ -130,6 +130,9 @@ type FlutterExportNode = {
     children: FlutterExportNode[];
 };
 
+type BuildTargetKind = "screen" | "widget" | "both";
+type DeviceKind = "mobile" | "tablet" | "desktop";
+
 type DesignSystemMetadata = {
     name: string;
     namingConvention: "semantic" | "scale" | "hybrid";
@@ -154,12 +157,16 @@ type LibraryComponentSummary = {
     componentPath: string | null;
     isVariant: boolean;
     variantProps: Record<string, string> | null;
+    matchConfidence?: number;
+    exactMatch?: boolean;
 };
 
 type InstantiateLibraryComponentParams = {
     libraryName?: string;
     componentNameContains?: string;
     componentPathContains?: string;
+    matchMode?: "exact" | "prefix" | "contains" | "fuzzy";
+    requireExactMatch?: boolean;
     targetShapeId?: string;
     x?: number;
     y?: number;
@@ -183,6 +190,28 @@ type DockShapeIntoContainerParams = {
     inset?: number;
 };
 
+type InstantiateLocalComponentIntoSlotParams = {
+    componentId?: string;
+    componentName?: string;
+    componentPath?: string;
+    matchMode?: "exact" | "prefix" | "contains";
+    requireExactMatch?: boolean;
+    targetShapeId: string;
+    pageId?: string;
+    childLayout?: WidgetChildLayoutSpec;
+    fit?: "none" | "contain" | "fill-width" | "fill-height" | "stretch";
+    inset?: number;
+};
+
+type ApplyInstanceTextOverridesParams = {
+    instanceShapeId: string;
+    pageId?: string;
+    overrides: Array<{
+        layerName: string;
+        text: string;
+    }>;
+};
+
 const DEFAULT_WIDGET_SPACING_SYSTEM: WidgetSpacingSystem = {
     xxs: 4,
     xs: 8,
@@ -197,6 +226,20 @@ export class PenpotUtils {
     private static readonly WIDGET_PLUGIN_PREFIX = "mcp.widget";
     private static readonly WIDGET_SEQUENCE_KEY = `${PenpotUtils.WIDGET_PLUGIN_PREFIX}.sequence`;
     private static readonly DESIGN_SYSTEM_PLUGIN_PREFIX = "mcp.designSystem";
+    private static readonly COMPONENT_CATEGORY_ORDER = [
+        "TOKENS/STYLES",
+        "BUTTONS",
+        "FORMS",
+        "HEADER",
+        "NAVIGATION",
+        "SEARCH",
+        "MEMBERS",
+        "USERS",
+        "CARDS",
+        "FEEDBACK",
+        "OVERLAYS",
+        "MISC",
+    ] as const;
 
     private static normalizeTokenProperties(properties: string[] | undefined): string[] | undefined {
         if (!properties || properties.length === 0) {
@@ -462,6 +505,278 @@ export class PenpotUtils {
         };
     }
 
+    public static inspectProjectSetup(options?: {
+        pageId?: string;
+        preferredScreenName?: string;
+        preferredComponentName?: string;
+    }): {
+        file: { id: string; name: string } | null;
+        page: { id: string; name: string } | null;
+        pages: Array<{ id: string; name: string }>;
+        structures: {
+            hasTokensPage: boolean;
+            hasComponentsPage: boolean;
+            hasDocumentationPage: boolean;
+            hasScreensPages: boolean;
+            matchingScreenPage?: { id: string; name: string } | null;
+            matchingComponentPage?: { id: string; name: string } | null;
+        };
+        tokenCatalog: {
+            hasTokens: boolean;
+            setCount: number;
+            themeCount: number;
+            activeThemeNames: string[];
+            setNames: string[];
+        };
+        libraries: Array<{
+            id: string;
+            name: string;
+            kind: "local" | "connected";
+            componentCount: number;
+        }>;
+        localComponents: Array<{
+            componentId: string;
+            componentName: string;
+            componentPath: string | null;
+            mainInstanceId: string | null;
+            variantProps: Record<string, string> | null;
+        }>;
+        selection: Array<{ id: string; name: string; type: string }>;
+    } {
+        const currentPage = options?.pageId ? this.getPageById(options.pageId) : penpot.currentPage;
+        const pages = this.getPages();
+        const findByName = (predicate: (normalized: string) => boolean) =>
+            penpot.currentFile?.pages.find((entry) => predicate(entry.name.trim().toLowerCase())) ?? null;
+        const hasPageName = (value: string) => !!this.getPageByName(value);
+        // @ts-ignore
+        const tokenCatalog = penpot.library.local.tokens;
+        const preferredScreenPage = options?.preferredScreenName
+            ? this.getPageByName(options.preferredScreenName) ??
+              this.getPageByName(`Screens/${options.preferredScreenName}`)
+            : null;
+        const preferredComponentPage = options?.preferredComponentName
+            ? this.getPageByName(options.preferredComponentName)
+            : null;
+
+        return {
+            file: penpot.currentFile ? { id: penpot.currentFile.id, name: penpot.currentFile.name } : null,
+            page: currentPage ? { id: currentPage.id, name: currentPage.name } : null,
+            pages,
+            structures: {
+                hasTokensPage:
+                    hasPageName("_Tokens") ||
+                    !!findByName((name) => name === "tokens" || name === "design tokens" || name === "styles"),
+                hasComponentsPage:
+                    hasPageName("_Components") ||
+                    !!findByName((name) => name === "components" || name === "widgets" || name === "ui kit"),
+                hasDocumentationPage: hasPageName("_Documentation"),
+                hasScreensPages: penpot.currentFile?.pages.some((entry) => entry.name.startsWith("Screens/")) ?? false,
+                matchingScreenPage: preferredScreenPage ? { id: preferredScreenPage.id, name: preferredScreenPage.name } : null,
+                matchingComponentPage: preferredComponentPage
+                    ? { id: preferredComponentPage.id, name: preferredComponentPage.name }
+                    : null,
+            },
+            tokenCatalog: {
+                hasTokens: tokenCatalog.sets.some((set: any) => set.tokens.length > 0),
+                setCount: tokenCatalog.sets.length,
+                themeCount: tokenCatalog.themes.length,
+                activeThemeNames: tokenCatalog.themes.filter((theme: any) => theme.active).map((theme: any) => theme.name),
+                setNames: tokenCatalog.sets.map((set: any) => set.name),
+            },
+            libraries: [penpot.library.local, ...penpot.library.connected].map((library, index) => ({
+                id: library.id,
+                name: library.name,
+                kind: index === 0 ? ("local" as const) : ("connected" as const),
+                componentCount: library.components.length,
+            })),
+            localComponents: this.listLocalComponents({ limit: 100 }).map((component) => ({
+                componentId: component.componentId,
+                componentName: component.componentName,
+                componentPath: component.componentPath,
+                mainInstanceId: component.mainInstanceId,
+                variantProps: component.variantProps,
+            })),
+            selection: penpot.selection.map((shape) => ({
+                id: shape.id,
+                name: shape.name,
+                type: shape.type,
+            })),
+        };
+    }
+
+    public static planUiBuild(params: {
+        buildTarget: BuildTargetKind;
+        name: string;
+        devices: DeviceKind[];
+        createTokensIfMissing?: boolean;
+        createPagesIfMissing?: boolean;
+        hasReference?: boolean;
+    }): {
+        buildTarget: BuildTargetKind;
+        name: string;
+        devices: DeviceKind[];
+        pagesToCreate: string[];
+        framesToCreate: Array<{ pageName: string; frameName: string; width: number; height: number; kind: DeviceKind | "component" }>;
+        missing: {
+            tokens: boolean;
+            pages: boolean;
+        };
+        requiresConfirmation: Array<"tokens" | "pages" | "frames">;
+        nextSteps: string[];
+    } {
+        const setup = this.inspectProjectSetup({
+            preferredScreenName: `Screens/${params.name}`,
+            preferredComponentName: params.name,
+        });
+        const pagesToCreate: string[] = [];
+        const framesToCreate: Array<{ pageName: string; frameName: string; width: number; height: number; kind: DeviceKind | "component" }> = [];
+        const requiresConfirmation = new Set<"tokens" | "pages" | "frames">();
+
+        const wantsScreens = params.buildTarget === "screen" || params.buildTarget === "both";
+        const wantsComponents = params.buildTarget === "widget" || params.buildTarget === "both";
+
+        if (wantsScreens && !setup.structures.hasScreensPages) {
+            pagesToCreate.push(`Screens/${params.name}`);
+            requiresConfirmation.add("pages");
+        }
+        if (wantsComponents && !setup.structures.hasComponentsPage) {
+            pagesToCreate.push("_Components");
+            requiresConfirmation.add("pages");
+        }
+
+        if (!setup.tokenCatalog.hasTokens && params.createTokensIfMissing !== false) {
+            requiresConfirmation.add("tokens");
+        }
+
+        if (wantsScreens) {
+            for (const device of params.devices) {
+                const spec =
+                    device === "mobile"
+                        ? { width: 360, height: 800, suffix: "Mobile" }
+                        : device === "tablet"
+                          ? { width: 768, height: 1024, suffix: "Tablet" }
+                          : { width: 1440, height: 900, suffix: "Desktop" };
+                framesToCreate.push({
+                    pageName: `Screens/${params.name}`,
+                    frameName: `${params.name}/${spec.suffix}`,
+                    width: spec.width,
+                    height: spec.height,
+                    kind: device,
+                });
+            }
+            requiresConfirmation.add("frames");
+        }
+
+        if (wantsComponents) {
+            framesToCreate.push({
+                pageName: "_Components",
+                frameName: params.name,
+                width: 320,
+                height: 180,
+                kind: "component",
+            });
+            requiresConfirmation.add("frames");
+        }
+
+        return {
+            buildTarget: params.buildTarget,
+            name: params.name,
+            devices: params.devices,
+            pagesToCreate,
+            framesToCreate,
+            missing: {
+                tokens: !setup.tokenCatalog.hasTokens,
+                pages:
+                    (wantsScreens && !setup.structures.hasScreensPages) ||
+                    (wantsComponents && !setup.structures.hasComponentsPage),
+            },
+            requiresConfirmation: [...requiresConfirmation],
+            nextSteps: [
+                "Inspect the current project setup before mutating.",
+                "Ask for explicit confirmation before creating missing pages, tokens, or frames.",
+                "Create parent frames first, then build reusable components in _Components.",
+                "Promote finished _Components frames into local library components before using them in screens.",
+                "Use instances with overrides on screens instead of duplicating components by content.",
+                params.hasReference
+                    ? "Use the provided reference to guide structure and component choice."
+                    : "Propose structure conservatively, preferring library components when available.",
+            ],
+        };
+    }
+
+    public static ensureFrameScaffolding(params: {
+        name: string;
+        buildTarget: BuildTargetKind;
+        devices: DeviceKind[];
+        screenPageName?: string;
+        componentsPageName?: string;
+        confirmed: boolean;
+    }): {
+        pages: Array<{ id: string; name: string; created: boolean }>;
+        frames: Array<{ id: string; name: string; pageId: string; pageName: string; created: boolean }>;
+    } {
+        if (!params.confirmed) {
+            throw new Error("Frame scaffolding requires explicit confirmation.");
+        }
+
+        const screenPageName = params.screenPageName ?? `Screens/${params.name}`;
+        const componentsPageName = params.componentsPageName ?? "_Components";
+        const pageEnsure = this.ensurePageStructure({
+            includeTokens: false,
+            includeDocumentation: false,
+            includeComponents: params.buildTarget === "widget" || params.buildTarget === "both",
+            screens: params.buildTarget === "screen" || params.buildTarget === "both" ? [screenPageName] : [],
+        });
+
+        const frames: Array<{ id: string; name: string; pageId: string; pageName: string; created: boolean }> = [];
+        const ensureBoard = (pageName: string, boardName: string, width: number, height: number, hug = false) => {
+            const page = this.getPageByName(pageName);
+            if (!page) {
+                throw new Error(`Page not found while creating scaffolding: ${pageName}`);
+            }
+            penpot.openPage(page);
+            const board =
+                this.findShape(
+                    (shape) => shape.type === "board" && this.getPlainWidgetName(shape.name || "") === boardName,
+                    page.root
+                ) ?? null;
+            if (board && board.type === "board") {
+                frames.push({ id: board.id, name: board.name, pageId: page.id, pageName: page.name, created: false });
+                return;
+            }
+            const created = penpot.createBoard();
+            created.name = boardName;
+            created.x = 120 + frames.length * 48;
+            created.y = 120;
+            created.resize(width, height);
+            created.fills = [{ fillColor: "#FFFFFF", fillOpacity: 1 }];
+            if (hug) {
+                created.horizontalSizing = "auto";
+                created.verticalSizing = "auto";
+            }
+            (page.root as any).appendChild(created);
+            frames.push({ id: created.id, name: created.name, pageId: page.id, pageName: page.name, created: true });
+        };
+
+        if (params.buildTarget === "screen" || params.buildTarget === "both") {
+            for (const device of params.devices) {
+                const spec =
+                    device === "mobile"
+                        ? { width: 360, height: 800, suffix: "Mobile" }
+                        : device === "tablet"
+                          ? { width: 768, height: 1024, suffix: "Tablet" }
+                          : { width: 1440, height: 900, suffix: "Desktop" };
+                ensureBoard(screenPageName, `${params.name}/${spec.suffix}`, spec.width, spec.height, false);
+            }
+        }
+
+        if (params.buildTarget === "widget" || params.buildTarget === "both") {
+            ensureBoard(componentsPageName, params.name, 320, 180, true);
+        }
+
+        return { pages: pageEnsure.pages, frames };
+    }
+
     public static createMainComponentFromShape(params: CreateMainComponentParams): {
         component: {
             id: string;
@@ -519,16 +834,53 @@ export class PenpotUtils {
             throw new Error("Source shape is not attached to a page");
         }
 
-        const originalBounds = this.getBounds(shape);
-        const sourceParent = shape.parent as any;
-        const sourceIndex = typeof shape.parentIndex === "number" ? shape.parentIndex : null;
+        const targetPageName = params.componentPageName ?? "_Components";
+        if (sourcePage.name !== targetPageName) {
+            throw new Error(
+                `Main components must be created from shapes on ${targetPageName}. Current shape is on ${sourcePage.name}.`
+            );
+        }
+
+        const requestedComponentName = params.componentName?.trim() || this.getPlainWidgetName(shape.name || "Component");
+        const duplicateComponent = (penpot.library.local.components as any[]).find(
+            (entry) => entry.name.trim().toLowerCase() === requestedComponentName.toLowerCase()
+        );
+        if (duplicateComponent) {
+            const duplicateMain = duplicateComponent.mainInstance?.();
+            if (shape.id !== duplicateMain?.id) {
+                try {
+                    shape.remove();
+                } catch (_error) {
+                    shape.hidden = true;
+                    shape.name = `[dedup-hidden] ${shape.name || shape.type}`;
+                }
+            }
+            if (duplicateMain) {
+                this.stageMainComponentInComponentsPage(duplicateMain, duplicateComponent.name, sourcePage);
+            }
+            return {
+                component: {
+                    id: duplicateComponent.id,
+                    name: duplicateComponent.name,
+                    path: duplicateComponent.path,
+                    libraryId: duplicateComponent.libraryId,
+                },
+                mainInstance: {
+                    id: duplicateMain?.id ?? null,
+                    name: duplicateMain?.name ?? duplicateComponent.name,
+                    pageId: this.getPageForShape(duplicateMain)?.id ?? sourcePage.id,
+                    pageName: this.getPageForShape(duplicateMain)?.name ?? sourcePage.name,
+                },
+                note: `Reused existing local component ${duplicateComponent.name} instead of creating a duplicate.`,
+                sourceInstance: null,
+            };
+        }
 
         const component = penpot.library.local.createComponent([shape]);
-        component.name = params.componentName ?? component.name;
+        component.name = requestedComponentName;
 
         const mainInstance = component.mainInstance();
-        mainInstance.name = params.componentName ?? mainInstance.name;
-        const targetPageName = params.componentPageName ?? "_Components";
+        mainInstance.name = requestedComponentName;
         const targetPage = this.getPageByName(targetPageName) ?? (() => {
             const page = penpot.createPage();
             page.name = targetPageName;
@@ -536,30 +888,10 @@ export class PenpotUtils {
         })();
         const mainPage = this.getPageForShape(mainInstance);
 
-        mainInstance.x = 120;
-        mainInstance.y = 120;
+        this.stageMainComponentInComponentsPage(mainInstance, component.name, targetPage);
         mainInstance.setPluginData(`${this.WIDGET_PLUGIN_PREFIX}.componentRole`, "main");
         mainInstance.setPluginData(`${this.WIDGET_PLUGIN_PREFIX}.componentId`, component.id);
         mainInstance.setPluginData(`${this.WIDGET_PLUGIN_PREFIX}.componentName`, component.name);
-
-        let sourceInstance: Shape | null = null;
-        if (params.leaveInstanceOnSourcePage !== false && mainPage?.id !== sourcePage.id) {
-            sourceInstance = component.instance();
-            sourceInstance.name = params.componentName ?? sourceInstance.name;
-            if (sourceParent && typeof sourceParent.appendChild === "function") {
-                sourceParent.appendChild(sourceInstance);
-                if (sourceIndex !== null && typeof sourceInstance.setParentIndex === "function") {
-                    sourceInstance.setParentIndex(sourceIndex);
-                }
-            } else {
-                (sourcePage.root as any).appendChild(sourceInstance);
-            }
-            sourceInstance.x = originalBounds.x;
-            sourceInstance.y = originalBounds.y;
-            sourceInstance.setPluginData(`${this.WIDGET_PLUGIN_PREFIX}.componentRole`, "instance");
-            sourceInstance.setPluginData(`${this.WIDGET_PLUGIN_PREFIX}.componentId`, component.id);
-            sourceInstance.setPluginData(`${this.WIDGET_PLUGIN_PREFIX}.componentName`, component.name);
-        }
 
         return {
             component: {
@@ -578,15 +910,190 @@ export class PenpotUtils {
                 mainPage?.id !== targetPage.id
                     ? `Penpot plugin context did not move the main component across pages; the component was created in the local library and remains referenced from ${mainPage?.name ?? "the source page"}.`
                     : null,
-            sourceInstance: sourceInstance
-                ? {
-                      id: sourceInstance.id,
-                      name: sourceInstance.name,
-                      pageId: sourcePage.id,
-                      pageName: sourcePage.name,
-                  }
-                : null,
+            sourceInstance: null,
         };
+    }
+
+    private static stageMainComponentInComponentsPage(mainInstance: Shape, componentName: string, page: Page): void {
+        const category = this.inferComponentCategory(componentName);
+        const label = this.ensureComponentCategoryLabel(page, category);
+        const siblings = this.getComponentCategorySiblings(page, category).filter((shape) => shape.id !== mainInstance.id);
+        const labelBounds = this.getBounds(label);
+        const siblingBounds = siblings
+            .map((shape) => ({ shape, bounds: this.getBounds(shape) }))
+            .filter((entry) => !!entry.bounds);
+
+        const startX = 120;
+        const componentY = labelBounds.y + labelBounds.height + 24;
+        const nextX =
+            siblingBounds.length > 0
+                ? Math.max(...siblingBounds.map((entry) => entry.bounds.x + entry.bounds.width)) + 40
+                : startX;
+
+        mainInstance.x = nextX;
+        mainInstance.y = componentY;
+        mainInstance.setPluginData(`${this.WIDGET_PLUGIN_PREFIX}.componentCategory`, category);
+    }
+
+    private static inferComponentCategory(componentName: string): string {
+        const normalized = componentName.trim().toLowerCase();
+        if (normalized.includes("/button")) {
+            return "BUTTONS";
+        }
+        if (normalized.includes("/form") || normalized.includes("/input") || normalized.includes("/select")) {
+            return "FORMS";
+        }
+        if (normalized.includes("/header") || normalized.includes("/appbar") || normalized.includes("/topbar")) {
+            return "HEADER";
+        }
+        if (normalized.includes("/nav") || normalized.includes("/sidebar") || normalized.includes("/tab")) {
+            return "NAVIGATION";
+        }
+        if (normalized.includes("/search")) {
+            return "SEARCH";
+        }
+        if (normalized.includes("/member") || normalized.includes("/avatar") || normalized.includes("/rolebadge")) {
+            return "MEMBERS";
+        }
+        if (normalized.includes("/user")) {
+            return "USERS";
+        }
+        if (normalized.includes("/card") || normalized.includes("/metric") || normalized.includes("/stat")) {
+            return "CARDS";
+        }
+        if (normalized.includes("/alert") || normalized.includes("/toast") || normalized.includes("/empty")) {
+            return "FEEDBACK";
+        }
+        if (normalized.includes("/modal") || normalized.includes("/drawer") || normalized.includes("/tooltip")) {
+            return "OVERLAYS";
+        }
+        return "MISC";
+    }
+
+    private static ensureComponentCategoryLabel(page: Page, category: string): Text {
+        const rootChildren = this.getPageRootChildren(page);
+        const existing = rootChildren.find(
+            (shape) =>
+                shape.type === "text" &&
+                shape.getPluginData(`${this.WIDGET_PLUGIN_PREFIX}.componentCategoryLabel`) === category
+        ) as Text | undefined;
+        if (existing) {
+            return existing;
+        }
+
+        const categoryIndex = this.COMPONENT_CATEGORY_ORDER.indexOf(category as (typeof PenpotUtils.COMPONENT_CATEGORY_ORDER)[number]);
+        const previousCategories = this.COMPONENT_CATEGORY_ORDER.slice(
+            0,
+            categoryIndex >= 0 ? categoryIndex : this.COMPONENT_CATEGORY_ORDER.length
+        );
+        const rootBounds = rootChildren
+            .map((shape) => this.getBounds(shape))
+            .filter((bounds) => !!bounds);
+        const previousBottom = rootChildren
+            .filter((shape) => {
+                const labelCategory = shape.getPluginData(`${this.WIDGET_PLUGIN_PREFIX}.componentCategoryLabel`);
+                const shapeCategory = shape.getPluginData(`${this.WIDGET_PLUGIN_PREFIX}.componentCategory`);
+                return previousCategories.includes((labelCategory || shapeCategory) as any);
+            })
+            .map((shape) => this.getBounds(shape).y + this.getBounds(shape).height);
+
+        const y =
+            previousBottom.length > 0
+                ? Math.max(...previousBottom) + 120
+                : rootBounds.length > 0
+                  ? Math.max(...rootBounds.map((bounds) => bounds.y + bounds.height)) + 120
+                  : 120;
+
+        const label = penpot.createText(category);
+        if (!label) {
+            throw new Error(`Could not create category label for ${category}`);
+        }
+        label.name = `${category} Label`;
+        label.x = 120;
+        label.y = y;
+        label.fontSize = "12";
+        label.fontWeight = "700";
+        label.textTransform = "uppercase";
+        label.fills = [{ fillColor: "#64748B", fillOpacity: 1 }];
+        label.setPluginData(`${this.WIDGET_PLUGIN_PREFIX}.componentCategoryLabel`, category);
+        (page.root as any).appendChild(label);
+        return label;
+    }
+
+    private static getComponentCategorySiblings(page: Page, category: string): Shape[] {
+        return this.getPageRootChildren(page).filter(
+            (shape) => shape.getPluginData(`${this.WIDGET_PLUGIN_PREFIX}.componentCategory`) === category
+        );
+    }
+
+    public static listLocalComponents(options?: {
+        nameContains?: string;
+        pathContains?: string;
+        matchMode?: "exact" | "prefix" | "contains";
+        requireExactMatch?: boolean;
+        limit?: number;
+    }): Array<{
+        componentId: string;
+        componentName: string;
+        componentPath: string | null;
+        mainInstanceId: string | null;
+        variantProps: Record<string, string> | null;
+        matchConfidence?: number;
+        exactMatch?: boolean;
+    }> {
+        const queryName = options?.nameContains?.trim().toLowerCase();
+        const queryPath = options?.pathContains?.trim().toLowerCase();
+        const matchMode = options?.matchMode ?? "contains";
+
+        const scoreMatch = (candidate: string | undefined | null, query: string): { score: number; exact: boolean } => {
+            const normalized = (candidate ?? "").toLowerCase().trim();
+            if (!normalized) {
+                return { score: 0, exact: false };
+            }
+            if (normalized === query) {
+                return { score: 1, exact: true };
+            }
+            if (matchMode === "exact") {
+                return { score: 0, exact: false };
+            }
+            if (normalized.startsWith(query)) {
+                return { score: 0.9, exact: false };
+            }
+            if (matchMode === "prefix") {
+                return { score: 0, exact: false };
+            }
+            if (normalized.includes(query)) {
+                return { score: 0.72, exact: false };
+            }
+            return { score: 0, exact: false };
+        };
+
+        return (penpot.library.local.components as any[])
+            .map((component) => {
+                const nameScore = queryName ? scoreMatch(component.name, queryName) : { score: 1, exact: false };
+                const pathScore = queryPath ? scoreMatch(component.path ?? component.name, queryPath) : { score: 1, exact: false };
+                const score = Math.min(nameScore.score, pathScore.score);
+                const exact = (!!queryName ? nameScore.exact : true) && (!!queryPath ? pathScore.exact : true);
+                if (score <= 0) {
+                    return null;
+                }
+                if (options?.requireExactMatch && !exact) {
+                    return null;
+                }
+                const main = component.mainInstance?.();
+                return {
+                    componentId: component.id,
+                    componentName: component.name,
+                    componentPath: component.path ?? null,
+                    mainInstanceId: main?.id ?? null,
+                    variantProps: component.variantProps ?? null,
+                    matchConfidence: score,
+                    exactMatch: exact,
+                };
+            })
+            .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
+            .sort((a, b) => (b.matchConfidence ?? 0) - (a.matchConfidence ?? 0))
+            .slice(0, options?.limit ?? 50);
     }
 
     private static findShapeInSubtreeById(shape: Shape, id: string): Shape | null {
@@ -644,28 +1151,82 @@ export class PenpotUtils {
         libraryName?: string;
         componentNameContains?: string;
         componentPathContains?: string;
+        matchMode?: "exact" | "prefix" | "contains" | "fuzzy";
+        requireExactMatch?: boolean;
         limit?: number;
     }): LibraryComponentSummary[] {
         const libraryName = options.libraryName?.toLowerCase();
-        const componentNameContains = options.componentNameContains?.toLowerCase();
-        const componentPathContains = options.componentPathContains?.toLowerCase();
+        const componentNameQuery = options.componentNameContains?.toLowerCase().trim();
+        const componentPathQuery = options.componentPathContains?.toLowerCase().trim();
+        const matchMode = options.matchMode ?? "contains";
 
-        return this.listLibraryComponents()
-            .filter((entry) => {
+        const scoreMatch = (candidate: string, query: string): { score: number; exact: boolean } => {
+            const normalized = candidate.toLowerCase();
+            if (normalized === query) {
+                return { score: 1, exact: true };
+            }
+            if (matchMode === "exact") {
+                return { score: 0, exact: false };
+            }
+            const segments = normalized.split(/[\/\s_-]+/).filter(Boolean);
+            if (segments.includes(query)) {
+                return { score: 0.98, exact: false };
+            }
+            if (normalized.startsWith(query)) {
+                return { score: 0.92, exact: false };
+            }
+            if (segments.some((segment) => segment.startsWith(query))) {
+                return { score: 0.88, exact: false };
+            }
+            if (matchMode === "prefix") {
+                return { score: 0, exact: false };
+            }
+            if (normalized.includes(query)) {
+                return { score: 0.75, exact: false };
+            }
+            if (matchMode === "contains") {
+                return { score: 0, exact: false };
+            }
+            const collapsed = normalized.replace(/[^a-z0-9]+/g, "");
+            const collapsedQuery = query.replace(/[^a-z0-9]+/g, "");
+            if (collapsed.includes(collapsedQuery) || collapsedQuery.includes(collapsed)) {
+                return { score: 0.55, exact: false };
+            }
+            return { score: 0, exact: false };
+        };
+
+        const rankedEntries = this.listLibraryComponents()
+            .map((entry): LibraryComponentSummary | null => {
                 if (libraryName && !entry.libraryName.toLowerCase().includes(libraryName)) {
-                    return false;
+                    return null;
                 }
-                if (componentNameContains && !entry.componentName.toLowerCase().includes(componentNameContains)) {
-                    return false;
+
+                const nameScore = componentNameQuery
+                    ? scoreMatch(entry.componentName, componentNameQuery)
+                    : { score: 1, exact: false };
+                const pathScore = componentPathQuery
+                    ? scoreMatch(entry.componentPath ?? "", componentPathQuery)
+                    : { score: 1, exact: false };
+                const score = Math.min(nameScore.score, pathScore.score);
+                const exact = !!componentNameQuery && nameScore.exact && (!componentPathQuery || pathScore.exact);
+
+                if (score <= 0) {
+                    return null;
                 }
-                if (
-                    componentPathContains &&
-                    !(entry.componentPath ?? "").toLowerCase().includes(componentPathContains)
-                ) {
-                    return false;
+                if (options.requireExactMatch && !exact) {
+                    return null;
                 }
-                return true;
-            })
+
+                return {
+                    ...entry,
+                    matchConfidence: score,
+                    exactMatch: exact,
+                };
+            });
+
+        return rankedEntries
+            .filter((entry): entry is LibraryComponentSummary => entry !== null)
+            .sort((a, b) => (b.matchConfidence ?? 0) - (a.matchConfidence ?? 0))
             .slice(0, options.limit ?? 50);
     }
 
@@ -674,6 +1235,10 @@ export class PenpotUtils {
             libraryName: params.libraryName,
             componentNameContains: params.componentNameContains,
             componentPathContains: params.componentPathContains,
+            // @ts-ignore keep compatibility with direct JSON calls
+            matchMode: (params as any).matchMode,
+            // @ts-ignore keep compatibility with direct JSON calls
+            requireExactMatch: (params as any).requireExactMatch,
             limit: 1,
         });
 
@@ -751,6 +1316,8 @@ export class PenpotUtils {
             targetShapeId: targetShape?.id ?? null,
             detached: params.detach ?? false,
             isComponentInstance: instance.isComponentInstance(),
+            matchConfidence: match.matchConfidence ?? null,
+            exactMatch: match.exactMatch ?? false,
         };
     }
 
@@ -804,6 +1371,10 @@ export class PenpotUtils {
             componentPathContains: params.componentPathContains,
             pageId: params.pageId,
             detach: params.detach,
+            // @ts-ignore compatibility with enhanced server tool args
+            matchMode: (params as any).matchMode,
+            // @ts-ignore compatibility with enhanced server tool args
+            requireExactMatch: (params as any).requireExactMatch,
         });
 
         const placement = this.inferLibrarySlotPlacement(instanceResult.match);
@@ -822,6 +1393,150 @@ export class PenpotUtils {
         return {
             ...instanceResult,
             ...dockResult,
+        };
+    }
+
+    public static instantiateLocalComponentIntoSlot(params: InstantiateLocalComponentIntoSlotParams): object {
+        const localComponents = penpot.library.local.components as any[];
+        const ranked = this.listLocalComponents({
+            nameContains: params.componentName,
+            pathContains: params.componentPath,
+            matchMode: params.matchMode,
+            requireExactMatch: params.requireExactMatch,
+            limit: 1,
+        }).map((match) => {
+            const component = localComponents.find((entry) => entry.id === match.componentId);
+            return component
+                ? {
+                      component,
+                      score: match.matchConfidence ?? 1,
+                      exact: match.exactMatch ?? false,
+                  }
+                : null;
+        }).filter((entry): entry is { component: any; score: number; exact: boolean } => entry !== null);
+
+        const selected = params.componentId
+            ? (() => {
+                  const component = localComponents.find((entry) => entry.id === params.componentId);
+                  return component ? { component, score: 1, exact: true } : null;
+              })()
+            : ranked[0];
+        if (!selected) {
+            throw new Error(
+                params.componentId
+                    ? `Local component not found: ${params.componentId}`
+                    : `No local component matched the requested query`
+            );
+        }
+
+        const page = params.pageId ? this.getPageById(params.pageId) : penpot.currentPage;
+        if (!page) {
+            throw new Error("No target page available for local component instantiation");
+        }
+
+        penpot.openPage(page);
+        const targetShape = this.findShapeOnPageById(page, params.targetShapeId);
+        if (!targetShape) {
+            throw new Error(`Target shape not found on current page: ${params.targetShapeId}`);
+        }
+
+        const instance = selected.component.instance();
+        const dockResult = this.dockShapeIntoContainer({
+            shapeId: instance.id,
+            targetShapeId: params.targetShapeId,
+            childLayout: params.childLayout ?? { absolute: false },
+            fit: params.fit ?? "none",
+            inset: params.inset ?? 0,
+        });
+
+        this.applyRuntimeIdentityMetadata(
+            instance,
+            {
+                type: "local_component_instance",
+                name: instance.name || selected.component.name,
+                semanticId: this.slugify(selected.component.name || selected.component.path || "local-component"),
+                sourceLibrary: penpot.library.local.name,
+                sourceComponentId: selected.component.id,
+                sourceComponentName: selected.component.name,
+                sourceComponentPath: selected.component.path ?? null,
+            },
+            page,
+            targetShape.type === "board" ? (targetShape as Board) : null
+        );
+
+        return {
+            component: {
+                id: selected.component.id,
+                name: selected.component.name,
+                path: selected.component.path ?? null,
+            },
+            instanceId: instance.id,
+            parentId: (instance.parent as any)?.id ?? null,
+            targetShapeId: targetShape.id,
+            matchConfidence: selected.score,
+            exactMatch: selected.exact,
+            ...dockResult,
+        };
+    }
+
+    public static applyInstanceTextOverrides(params: ApplyInstanceTextOverridesParams): {
+        instance: { id: string; name: string; componentId: string | null };
+        overrides: Array<{ layerName: string; text: string; applied: boolean; matchedShapeId?: string; reason?: string }>;
+    } {
+        const page = params.pageId ? this.getPageById(params.pageId) : penpot.currentPage;
+        if (!page) {
+            throw new Error("No active page available for instance overrides");
+        }
+
+        const instanceShape = this.findShapeOnPageById(page, params.instanceShapeId);
+        if (!instanceShape) {
+            throw new Error(`Instance shape not found: ${params.instanceShapeId}`);
+        }
+        if (!instanceShape.isComponentInstance()) {
+            throw new Error(`Shape is not a component instance: ${params.instanceShapeId}`);
+        }
+
+        const descendantTexts = this.findShapes(
+            (shape) => shape.type === "text",
+            instanceShape
+        ) as Text[];
+
+        const findTextLayer = (layerName: string): Text | null => {
+            const normalizedQuery = this.getPlainWidgetName(layerName).toLowerCase();
+            return (
+                descendantTexts.find((shape) => this.getPlainWidgetName(shape.name || "").toLowerCase() === normalizedQuery) ??
+                descendantTexts.find((shape) => this.getPlainWidgetName(shape.name || "").toLowerCase().includes(normalizedQuery)) ??
+                null
+            );
+        };
+
+        const results = params.overrides.map((override) => {
+            const textShape = findTextLayer(override.layerName);
+            if (!textShape) {
+                return {
+                    layerName: override.layerName,
+                    text: override.text,
+                    applied: false,
+                    reason: "Matching text layer not found in instance subtree",
+                };
+            }
+
+            textShape.characters = override.text;
+            return {
+                layerName: override.layerName,
+                text: override.text,
+                applied: true,
+                matchedShapeId: textShape.id,
+            };
+        });
+
+        return {
+            instance: {
+                id: instanceShape.id,
+                name: instanceShape.name,
+                componentId: instanceShape.component()?.id ?? null,
+            },
+            overrides: results,
         };
     }
 
@@ -1499,6 +2214,140 @@ export class PenpotUtils {
         };
     }
 
+    public static inspectUnsafeConstructionPatterns(params?: {
+        pageId?: string;
+    }): {
+        page: { id: string; name: string };
+        summary: {
+            topLevelCount: number;
+            componentInstanceCount: number;
+            rawBoardCount: number;
+            tokenizedShapeCount: number;
+            untokenizedShapeCount: number;
+        };
+        findings: Array<{
+            severity: "high" | "medium" | "low";
+            code: string;
+            message: string;
+            shapeId?: string;
+            shapeName?: string;
+        }>;
+    } {
+        const page = params?.pageId ? this.getPageById(params.pageId) : penpot.currentPage;
+        if (!page) {
+            throw new Error("No active page available for construction safety inspection");
+        }
+
+        const topLevel = this.getPageRootChildren(page);
+        const allShapes = this.findShapes((shape) => shape !== page.root, page.root);
+        const componentInstances = allShapes.filter((shape) => shape.isComponentInstance());
+        const tokenizedShapes = allShapes.filter((shape: any) => Object.keys((shape.tokens ?? {}) as Record<string, string>).length > 0);
+        const rawBoards = allShapes.filter((shape) => shape.type === "board" && !shape.isComponentInstance());
+        const findings: Array<{
+            severity: "high" | "medium" | "low";
+            code: string;
+            message: string;
+            shapeId?: string;
+            shapeName?: string;
+        }> = [];
+
+        const isScreenPage = page.name.startsWith("Screens/");
+        if (isScreenPage && componentInstances.length === 0 && rawBoards.length > 6) {
+            findings.push({
+                severity: "high",
+                code: "screen-without-instances",
+                message:
+                    "This screen page is composed entirely of raw shapes/boards without component instances. Build reusable UI in _Components first, then place instances on the screen.",
+            });
+        }
+
+        if (topLevel.length > 1) {
+            findings.push({
+                severity: "medium",
+                code: "multiple-top-level-boards",
+                message:
+                    "This page has multiple top-level elements. For screens, prefer a single parent frame/board and keep floating extras to a minimum.",
+            });
+        }
+
+        if (tokenizedShapes.length === 0 && allShapes.length > 10) {
+            findings.push({
+                severity: "medium",
+                code: "untokenized-screen",
+                message:
+                    "The page contains many shapes but no applied design tokens. This usually indicates hardcoded fills/typography and makes design updates brittle.",
+            });
+        }
+
+        if (page.name === "_Components") {
+            const localComponents = penpot.library.local.components as any[];
+            const seen = new Map<string, string>();
+            for (const component of localComponents) {
+                const normalized = component.name.trim().toLowerCase();
+                if (seen.has(normalized)) {
+                    findings.push({
+                        severity: "high",
+                        code: "duplicate-local-component-name",
+                        message: `Duplicate local component name detected: ${component.name}. Reuse one main component and use overrides or variants instead of cloning by content.`,
+                        shapeId: component.mainInstance?.()?.id ?? undefined,
+                        shapeName: component.name,
+                    });
+                } else {
+                    seen.set(normalized, component.id);
+                }
+            }
+
+            for (const component of localComponents) {
+                const main = component.mainInstance?.();
+                if (!main || main.type !== "board") {
+                    continue;
+                }
+                const directTextChildren = ("children" in main ? main.children : []).filter((child: Shape) => child.type === "text");
+                const directBoardChildren = ("children" in main ? main.children : []).filter((child: Shape) => child.type === "board");
+                if (directTextChildren.length > 0 && directBoardChildren.length > 0) {
+                    findings.push({
+                        severity: "medium",
+                        code: "text-directly-under-component-root",
+                        message:
+                            "This main component has text directly under the component root. Wrap text layers in an inner frame with layout so the component remains responsive.",
+                        shapeId: main.id,
+                        shapeName: main.name,
+                    });
+                }
+            }
+        }
+
+        for (const shape of allShapes) {
+            const layoutChild = (shape as any).layoutChild;
+            if (!layoutChild) {
+                continue;
+            }
+            const invalidCenter =
+                layoutChild.verticalSizing === "center" || layoutChild.horizontalSizing === "center";
+            if (invalidCenter) {
+                findings.push({
+                    severity: "high",
+                    code: "invalid-layout-sizing",
+                    message: "Found invalid layout sizing value `center`. Only `fix`, `auto`, or `fill` are safe here.",
+                    shapeId: shape.id,
+                    shapeName: shape.name,
+                });
+            }
+        }
+
+        return {
+            page: { id: page.id, name: page.name },
+            summary: {
+                topLevelCount: topLevel.length,
+                componentInstanceCount: componentInstances.length,
+                rawBoardCount: rawBoards.length,
+                tokenizedShapeCount: tokenizedShapes.length,
+                untokenizedShapeCount: Math.max(0, allShapes.length - tokenizedShapes.length),
+            },
+            findings,
+        };
+    }
+
     public static ensureDesignTokenStructure(params: {
         setName?: string;
         themeGroup?: string;
@@ -1909,6 +2758,61 @@ export class PenpotUtils {
         }
 
         return { designSystem: this.readDesignSystemMetadata(page), root, nodes };
+    }
+
+    public static diagnoseExportShape(params: { shapeId?: string; pageId?: string }): {
+        page: { id: string; name: string } | null;
+        shape: { id: string; name: string; type: string } | null;
+        bounds: { x: number; y: number; width: number; height: number } | null;
+        descendantCount: number;
+        componentInstanceCount: number;
+        hasSvgRawDescendants: boolean;
+        hasImageFillDescendants: boolean;
+        exportCandidates: Array<{ id: string; name: string; type: string; descendantCount: number }>;
+    } {
+        const page = params.pageId ? this.getPageById(params.pageId) : penpot.currentPage;
+        if (!page) {
+            throw new Error("No active page available for export diagnosis");
+        }
+        const shape = params.shapeId ? this.findShapeOnPageById(page, params.shapeId) : (page.root as Shape);
+        if (!shape) {
+            throw new Error(`Shape not found on page: ${params.shapeId}`);
+        }
+
+        const descendants = this.findShapes((entry) => entry.id !== shape.id, shape);
+        const exportCandidates = [shape, ...descendants]
+            .filter((entry) => entry.type === "board" || entry.type === "group" || entry.type === "rectangle")
+            .map((entry) => ({
+                id: entry.id,
+                name: entry.name || entry.type,
+                type: entry.type,
+                descendantCount: this.findShapes((child) => child.id !== entry.id, entry).length,
+            }))
+            .sort((a, b) => {
+                const typeRank = (value: string) => (value === "board" ? 0 : value === "group" ? 1 : 2);
+                const rankDelta = typeRank(a.type) - typeRank(b.type);
+                if (rankDelta !== 0) {
+                    return rankDelta;
+                }
+                return b.descendantCount - a.descendantCount;
+            })
+            .slice(0, 20);
+
+        return {
+            page: { id: page.id, name: page.name },
+            shape: { id: shape.id, name: shape.name, type: shape.type },
+            bounds: (() => {
+                const bounds = this.getBounds(shape);
+                return bounds ? { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height } : null;
+            })(),
+            descendantCount: descendants.length,
+            componentInstanceCount: descendants.filter((entry) => entry.isComponentInstance()).length,
+            hasSvgRawDescendants: descendants.some((entry) => entry.type === "svg-raw"),
+            hasImageFillDescendants: descendants.some(
+                (entry: any) => Array.isArray(entry.fills) && entry.fills.some((fill: any) => fill?.fillImage)
+            ),
+            exportCandidates,
+        };
     }
 
     public static setDesignSystemMetadata(metadata: DesignSystemMetadata): DesignSystemMetadata {
@@ -2876,27 +3780,47 @@ export class PenpotUtils {
         const layoutIntent = this.inferFlutterLayoutIntent(shape, metadata);
         const spacingIntent = this.inferFlutterSpacingIntent(shape, metadata);
         const inferredProps = this.inferFlutterProps(shape, metadata.props);
+        const sourceLibrary = metadata.sourceLibrary || undefined;
+        const sourceComponentName = metadata.sourceComponentName || component?.name || undefined;
+        const sourceComponentPath = metadata.sourceComponentPath || component?.path || null;
+        const isLucideIcon = (sourceLibrary ?? "").toLowerCase().includes("lucide");
+        const iconCanonicalName = isLucideIcon
+            ? this.toFlutterIconName(sourceComponentName ?? sourceComponentPath ?? shape.name ?? semanticId)
+            : undefined;
 
         return {
             widgetId,
             semanticId,
             sequenceId: metadata.sequence ?? undefined,
-            widgetType: metadata.type || (component ? "library_component" : shape.type),
+            widgetType: isLucideIcon ? "icon" : metadata.type || (component ? "library_component" : shape.type),
             role: metadata.role || undefined,
             displayName: this.getPlainWidgetName(metadata.name || shape.name || shape.type),
             sourceShapeId: shape.id,
             parentWidgetId,
             slot: metadata.slot || undefined,
-            sourceLibrary: metadata.sourceLibrary || undefined,
+            sourceLibrary,
             sourceComponentId: metadata.sourceComponentId || component?.id || undefined,
-            sourceComponentName: metadata.sourceComponentName || component?.name || undefined,
-            sourceComponentPath: metadata.sourceComponentPath || component?.path || null,
+            sourceComponentName,
+            sourceComponentPath,
             layoutIntent: layoutIntent ?? undefined,
             spacingIntent: spacingIntent ?? undefined,
-            props: inferredProps,
+            props: iconCanonicalName ? { ...inferredProps, iconName: iconCanonicalName } : inferredProps,
             tokens: metadata.tokens ?? undefined,
             children: [],
         };
+    }
+
+    private static toFlutterIconName(raw: string): string {
+        return raw
+            .replace(/[^a-zA-Z0-9]+/g, " ")
+            .trim()
+            .split(/\s+/)
+            .map((part, index) =>
+                index === 0
+                    ? part.charAt(0).toLowerCase() + part.slice(1)
+                    : part.charAt(0).toUpperCase() + part.slice(1)
+            )
+            .join("");
     }
 
     private static buildFlutterExportWidgetId(shape: Shape, semanticId: string, sequence?: number): string {

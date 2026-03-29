@@ -18,6 +18,7 @@ import { FindLibraryComponentsTool } from "./tools/FindLibraryComponentsTool";
 import { InstantiateLibraryComponentTool } from "./tools/InstantiateLibraryComponentTool";
 import { DockShapeIntoContainerTool } from "./tools/DockShapeIntoContainerTool";
 import { InstantiateLibraryComponentIntoSlotTool } from "./tools/InstantiateLibraryComponentIntoSlotTool";
+import { InstantiateLocalComponentIntoSlotTool } from "./tools/InstantiateLocalComponentIntoSlotTool";
 import { PluginConnectionStatusTool } from "./tools/PluginConnectionStatusTool";
 import { InspectCanvasTool } from "./tools/InspectCanvasTool";
 import { InspectDesignTokensTool } from "./tools/InspectDesignTokensTool";
@@ -28,12 +29,20 @@ import { SuggestDesignTokenNamesTool } from "./tools/SuggestDesignTokenNamesTool
 import { NormalizeDesignTokenPayloadTool } from "./tools/NormalizeDesignTokenPayloadTool";
 import { SetupDesignTokenSystemTool } from "./tools/SetupDesignTokenSystemTool";
 import { EnsurePageStructureTool } from "./tools/EnsurePageStructureTool";
+import { InspectProjectSetupTool } from "./tools/InspectProjectSetupTool";
+import { PlanUiBuildTool } from "./tools/PlanUiBuildTool";
+import { EnsureFrameScaffoldingTool } from "./tools/EnsureFrameScaffoldingTool";
+import { ConfirmStructuralSetupTool } from "./tools/ConfirmStructuralSetupTool";
+import { FindLocalComponentsTool } from "./tools/FindLocalComponentsTool";
 import { CreateMainComponentFromShapeTool } from "./tools/CreateMainComponentFromShapeTool";
 import { CreateVariantGroupFromComponentsTool } from "./tools/CreateVariantGroupFromComponentsTool";
 import { ExportToFlutterTool } from "./tools/ExportToFlutterTool";
 import { GenerateFlutterDartTool } from "./tools/GenerateFlutterDartTool";
 import { ApplyDesignTokensToShapeTool } from "./tools/ApplyDesignTokensToShapeTool";
+import { ApplyInstanceTextOverridesTool } from "./tools/ApplyInstanceTextOverridesTool";
 import { InspectDesignTokenUsageTool } from "./tools/InspectDesignTokenUsageTool";
+import { InspectUnsafeConstructionPatternsTool } from "./tools/InspectUnsafeConstructionPatternsTool";
+import { DiagnoseExportShapeTool } from "./tools/DiagnoseExportShapeTool";
 
 /**
  * Session context for request-scoped data.
@@ -166,17 +175,24 @@ export class PenpotMcpServer {
     private initTools(): ToolInfo[] {
         const toolInstances: Tool<any>[] = [
             new PluginConnectionStatusTool(this),
+            new InspectProjectSetupTool(this),
             new InspectCanvasTool(this),
             new InspectDesignTokensTool(this),
+            new PlanUiBuildTool(this),
             new PlanDesignTokenSystemTool(this),
             new SuggestDesignTokenNamesTool(this),
             new NormalizeDesignTokenPayloadTool(this),
+            new ConfirmStructuralSetupTool(this),
             new SetupDesignTokenSystemTool(this),
             new EnsureDesignTokenStructureTool(this),
             new UpsertDesignTokenTool(this),
             new ApplyDesignTokensToShapeTool(this),
+            new ApplyInstanceTextOverridesTool(this),
             new InspectDesignTokenUsageTool(this),
+            new InspectUnsafeConstructionPatternsTool(this),
             new EnsurePageStructureTool(this),
+            new EnsureFrameScaffoldingTool(this),
+            new FindLocalComponentsTool(this),
             new CreateMainComponentFromShapeTool(this),
             new CreateVariantGroupFromComponentsTool(this),
             new ExportToFlutterTool(this),
@@ -186,9 +202,11 @@ export class PenpotMcpServer {
             new InstantiateLibraryComponentTool(this),
             new DockShapeIntoContainerTool(this),
             new InstantiateLibraryComponentIntoSlotTool(this),
+            new InstantiateLocalComponentIntoSlotTool(this),
             new CreateWidgetTreeTool(this),
             new HighLevelOverviewTool(this),
             new PenpotApiInfoTool(this, this.apiDocs),
+            new DiagnoseExportShapeTool(this),
             new ExportShapeTool(this),
         ];
         if (this.isFileSystemAccessEnabled()) {
