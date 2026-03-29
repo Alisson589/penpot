@@ -879,6 +879,10 @@ export class PenpotUtils {
             throw new Error(`Created component shell root not found on page: ${result.root.id}`);
         }
 
+        // Place at origin first to avoid Penpot auto-capturing children into another board before staging.
+        (rootShape as any).x = 0;
+        (rootShape as any).y = 0;
+
         this.stageMainComponentInComponentsPage(rootShape, params.name, page, params.category);
         rootShape.name = this.ensureWidgetDisplayName(this.getPlainWidgetName(params.name), rootNode.id || this.slugify(params.name));
 
@@ -892,6 +896,7 @@ export class PenpotUtils {
             category: params.category ?? this.inferComponentCategory(params.name),
         };
     }
+
 
     public static organizeShapeInComponentsPage(params: {
         shapeId: string;

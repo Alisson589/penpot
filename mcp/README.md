@@ -225,6 +225,35 @@ To add the Penpot MCP server to a Claude Code project, issue the command
 
     claude mcp add penpot -t http http://localhost:4401/mcp
 
+## Penpot CLI (Recommended)
+
+The Penpot CLI is a tool that orchestrates MCP tools in the correct order for common workflows. It is the recommended way to interact with the Penpot MCP from your terminal.
+
+### Installation & Path Setup
+
+#### Linux / WSL
+To use `penpot-cli` from anywhere, add an alias to your shell configuration (e.g., `~/.bashrc` or `~/.zshrc`):
+```bash
+echo 'alias penpot-cli="node $(pwd)/packages/cli/dist/index.js"' >> ~/.bashrc
+source ~/.bashrc
+```
+*(Replace `$(pwd)` with the absolute path to your `penpot/mcp` directory)*
+
+#### Windows (PowerShell)
+Add this function to your PowerShell `$PROFILE` to call the WSL-hosted CLI:
+```powershell
+function penpot-cli { wsl node /home/sebas/app/penpot/penpot/mcp/packages/cli/dist/index.js $args }
+```
+
+#### Windows (CMD)
+Create a `penpot-cli.cmd` file in your Windows PATH with:
+```cmd
+@echo off
+wsl node /home/sebas/app/penpot/penpot/mcp/packages/cli/dist/index.js %*
+```
+
+For more details, see the [CLI README](packages/cli/README.md).
+
 ## Recommended Build Flow
 
 When using the MCP for UI construction, follow this sequence:
@@ -262,7 +291,7 @@ Below is the practical role of the main MCP tools added in this workflow:
 - `find_local_components`
   - searches reusable components already created in the local file library
 - `create_component_shell`
-  - creates a structured reusable shell on `_Components` with safe layout defaults
+  - cria um shell estruturado em `_Components`, posiciona no (0,0) para evitar captura indevida, respeita o layout fornecido e só depois faz o staging na categoria
 - `organize_component_in_components_page`
   - moves/restages a shell in `_Components` so categories stay organized and non-overlapping
 - `publish_components_from_components_page`
