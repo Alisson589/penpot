@@ -32,6 +32,8 @@ import { CreateMainComponentFromShapeTool } from "./tools/CreateMainComponentFro
 import { CreateVariantGroupFromComponentsTool } from "./tools/CreateVariantGroupFromComponentsTool";
 import { ExportToFlutterTool } from "./tools/ExportToFlutterTool";
 import { GenerateFlutterDartTool } from "./tools/GenerateFlutterDartTool";
+import { ApplyDesignTokensToShapeTool } from "./tools/ApplyDesignTokensToShapeTool";
+import { InspectDesignTokenUsageTool } from "./tools/InspectDesignTokenUsageTool";
 
 /**
  * Session context for request-scoped data.
@@ -172,6 +174,8 @@ export class PenpotMcpServer {
             new SetupDesignTokenSystemTool(this),
             new EnsureDesignTokenStructureTool(this),
             new UpsertDesignTokenTool(this),
+            new ApplyDesignTokensToShapeTool(this),
+            new InspectDesignTokenUsageTool(this),
             new EnsurePageStructureTool(this),
             new CreateMainComponentFromShapeTool(this),
             new CreateVariantGroupFromComponentsTool(this),

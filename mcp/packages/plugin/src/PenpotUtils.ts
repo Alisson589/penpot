@@ -198,6 +198,39 @@ export class PenpotUtils {
     private static readonly WIDGET_SEQUENCE_KEY = `${PenpotUtils.WIDGET_PLUGIN_PREFIX}.sequence`;
     private static readonly DESIGN_SYSTEM_PLUGIN_PREFIX = "mcp.designSystem";
 
+    private static normalizeTokenProperties(properties: string[] | undefined): string[] | undefined {
+        if (!properties || properties.length === 0) {
+            return undefined;
+        }
+
+        const expanded = properties.flatMap((property) => {
+            switch (property) {
+                case "borderRadius":
+                case "radius":
+                    return [
+                        "borderRadiusTopLeft",
+                        "borderRadiusTopRight",
+                        "borderRadiusBottomRight",
+                        "borderRadiusBottomLeft",
+                    ];
+                case "fontFamilies":
+                case "fontFamily":
+                    return ["fontFamilies"];
+                case "fontSizes":
+                    return ["fontSize"];
+                case "fontWeights":
+                    return ["fontWeight"];
+                case "spacing":
+                case "gap":
+                    return ["rowGap", "columnGap"];
+                default:
+                    return [property];
+            }
+        });
+
+        return Array.from(new Set(expanded));
+    }
+
     /**
      * Generates an overview structure of the given shape,
      * providing its id, name and type, and recursively its children's attributes.
@@ -1205,6 +1238,267 @@ export class PenpotUtils {
         };
     }
 
+    public static async applyDesignTokensToShape(params: {
+        shapeId: string;
+        pageId?: string;
+        assignments: Array<{
+            tokenName: string;
+            setName?: string;
+            properties?: string[];
+        }>;
+    }): Promise<{
+        shape: { id: string; name: string; type: string };
+        assignments: Array<{
+            tokenName: string;
+            setName?: string;
+            properties?: string[];
+            applied: boolean;
+            reason?: string;
+        }>;
+        tokens: Record<string, string>;
+    }> {
+        const page = params.pageId ? this.getPageById(params.pageId) : penpot.currentPage;
+        if (!page) {
+            throw new Error("No active page available for token application");
+        }
+
+        const shape = this.findShapeOnPageById(page, params.shapeId);
+        if (!shape) {
+            throw new Error(`Shape not found: ${params.shapeId}`);
+        }
+
+        const resolveToken = (tokenName: string, setName?: string): any | null => {
+            // @ts-ignore
+            const tokenCatalog = penpot.library.local.tokens;
+            if (setName) {
+                const set = tokenCatalog.sets.find((entry: any) => entry.name === setName);
+                if (!set) {
+                    return null;
+                }
+                return set.tokens.find((entry: any) => entry.name === tokenName) ?? null;
+            }
+
+            return this.findTokenByName(tokenName);
+        };
+
+        const results = params.assignments.map((assignment) => {
+            const token = resolveToken(assignment.tokenName, assignment.setName);
+            if (!token) {
+                return {
+                    tokenName: assignment.tokenName,
+                    setName: assignment.setName,
+                    properties: assignment.properties,
+                    applied: false,
+                    reason: assignment.setName
+                        ? `Token ${assignment.tokenName} not found in set ${assignment.setName}`
+                        : `Token ${assignment.tokenName} not found`,
+                };
+            }
+
+            const properties = this.normalizeTokenProperties(assignment.properties);
+            (shape as any).applyToken(token, properties as any);
+
+            return {
+                tokenName: assignment.tokenName,
+                setName: assignment.setName,
+                properties,
+                applied: true,
+            };
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 320));
+        const refreshedShape = this.findShapeOnPageById(page, params.shapeId) ?? shape;
+
+        return {
+            shape: {
+                id: refreshedShape.id,
+                name: refreshedShape.name,
+                type: refreshedShape.type,
+            },
+            assignments: results,
+            tokens: { ...(((refreshedShape as any).tokens ?? {}) as Record<string, string>) },
+        };
+    }
+
+    public static inspectDesignTokenUsage(params?: {
+        shapeId?: string;
+        pageId?: string;
+        includeSubtree?: boolean;
+        includeCatalogMatches?: boolean;
+    }): {
+        page: { id: string; name: string };
+        shapes: Array<{
+            id: string;
+            name: string;
+            type: string;
+            tokens: Record<string, string>;
+            warnings: Array<{
+                property: string;
+                issue: string;
+                currentValue: unknown;
+                suggestedTokens?: string[];
+            }>;
+        }>;
+    } {
+        const page = params?.pageId ? this.getPageById(params.pageId) : penpot.currentPage;
+        if (!page) {
+            throw new Error("No active page available for token usage inspection");
+        }
+
+        const normalizeColor = (value: unknown): string | null => {
+            if (typeof value !== "string") {
+                return null;
+            }
+            return value.trim().toLowerCase();
+        };
+
+        const normalizeNumber = (value: unknown): number | null => {
+            if (typeof value === "number" && Number.isFinite(value)) {
+                return value;
+            }
+            if (typeof value === "string" && value.trim() !== "") {
+                const parsed = Number(value);
+                return Number.isFinite(parsed) ? parsed : null;
+            }
+            return null;
+        };
+
+        const findMatchingTokens = (type: string, value: unknown): string[] => {
+            // @ts-ignore
+            const tokenCatalog = penpot.library.local.tokens;
+            const matches: string[] = [];
+            for (const set of tokenCatalog.sets) {
+                for (const token of set.tokens) {
+                    if (token.type !== type) {
+                        continue;
+                    }
+
+                    if (type === "color") {
+                        const tokenValue = normalizeColor(token.resolvedValue ?? token.value);
+                        const currentValue = normalizeColor(value);
+                        if (tokenValue && currentValue && tokenValue === currentValue) {
+                            matches.push(token.name);
+                        }
+                        continue;
+                    }
+
+                    const tokenValue = normalizeNumber(token.resolvedValue ?? token.value);
+                    const currentValue = normalizeNumber(value);
+                    if (tokenValue !== null && currentValue !== null && tokenValue === currentValue) {
+                        matches.push(token.name);
+                    }
+                }
+            }
+            return Array.from(new Set(matches));
+        };
+
+        const inspectShape = (shape: Shape) => {
+            const warnings: Array<{
+                property: string;
+                issue: string;
+                currentValue: unknown;
+                suggestedTokens?: string[];
+            }> = [];
+            const tokens = { ...(((shape as any).tokens ?? {}) as Record<string, string>) };
+
+            const warnIfHardcoded = (property: string, type: string, value: unknown) => {
+                if (tokens[property]) {
+                    return;
+                }
+                const suggestedTokens = params?.includeCatalogMatches === false ? [] : findMatchingTokens(type, value);
+                warnings.push({
+                    property,
+                    issue: suggestedTokens.length
+                        ? "Hardcoded value has matching tokens in the catalog"
+                        : "Hardcoded value is not tokenized",
+                    currentValue: value,
+                    suggestedTokens: suggestedTokens.length ? suggestedTokens : undefined,
+                });
+            };
+
+            if ("fills" in shape && Array.isArray(shape.fills) && shape.fills.length > 0) {
+                const firstFill = shape.fills[0] as any;
+                if (firstFill?.fillColor) {
+                    warnIfHardcoded("fill", "color", firstFill.fillColor);
+                }
+            }
+
+            if ("strokes" in shape && Array.isArray(shape.strokes) && shape.strokes.length > 0) {
+                const firstStroke = shape.strokes[0] as any;
+                if (firstStroke?.strokeColor) {
+                    warnIfHardcoded("strokeColor", "color", firstStroke.strokeColor);
+                }
+                if (firstStroke?.strokeWidth !== undefined) {
+                    warnIfHardcoded("strokeWidth", "borderWidth", firstStroke.strokeWidth);
+                }
+            }
+
+            if ("borderRadius" in shape && typeof (shape as any).borderRadius === "number") {
+                warnIfHardcoded("borderRadius", "borderRadius", (shape as any).borderRadius);
+            }
+
+            if ("opacity" in shape && typeof (shape as any).opacity === "number") {
+                warnIfHardcoded("opacity", "opacity", (shape as any).opacity);
+            }
+
+            if ("fontSize" in shape && typeof (shape as any).fontSize === "string") {
+                warnIfHardcoded("fontSize", "fontSizes", (shape as any).fontSize);
+            }
+
+            if ("fontWeight" in shape && typeof (shape as any).fontWeight === "string") {
+                warnIfHardcoded("fontWeight", "fontWeights", (shape as any).fontWeight);
+            }
+
+            if ("letterSpacing" in shape && typeof (shape as any).letterSpacing === "string") {
+                warnIfHardcoded("letterSpacing", "letterSpacing", (shape as any).letterSpacing);
+            }
+
+            if ("flex" in shape && shape.flex) {
+                warnIfHardcoded("rowGap", "spacing", shape.flex.rowGap);
+                warnIfHardcoded("columnGap", "spacing", shape.flex.columnGap);
+            }
+
+            return {
+                id: shape.id,
+                name: shape.name,
+                type: shape.type,
+                tokens,
+                warnings,
+            };
+        };
+
+        const rootShape = params?.shapeId ? this.findShapeOnPageById(page, params.shapeId) : page.root;
+        if (!rootShape) {
+            throw new Error(params?.shapeId ? `Shape not found: ${params.shapeId}` : "Page root not found");
+        }
+
+        const shapes: Shape[] = [];
+        const collect = (shape: Shape) => {
+            if (shape !== page.root || params?.shapeId) {
+                shapes.push(shape);
+            }
+            if (!params?.includeSubtree) {
+                return;
+            }
+            if (!("children" in shape) || !shape.children) {
+                return;
+            }
+            for (const child of shape.children) {
+                collect(child);
+            }
+        };
+
+        collect(rootShape);
+
+        return {
+            page: {
+                id: page.id,
+                name: page.name,
+            },
+            shapes: shapes.map((shape) => inspectShape(shape)),
+        };
+    }
+
     public static ensureDesignTokenStructure(params: {
         setName?: string;
         themeGroup?: string;
@@ -1713,6 +2007,10 @@ export class PenpotUtils {
             this.applyWidgetLayout(shape as Board, node.layout);
         }
 
+        if (node.tokens) {
+            this.applyWidgetTokens(shape, node.tokens);
+        }
+
         const summary: WidgetTreeNodeResult = {
             id: shape.id,
             type: node.type,
@@ -1793,6 +2091,18 @@ export class PenpotUtils {
         }
         text.fills = node.style?.fills ?? [{ fillColor: "#111827", fillOpacity: 1 }];
         return text;
+    }
+
+    private static applyWidgetTokens(shape: Shape, tokens: Record<string, string>): void {
+        for (const [property, tokenName] of Object.entries(tokens)) {
+            const token = this.findTokenByName(tokenName);
+            if (!token) {
+                continue;
+            }
+
+            const normalizedProperties = this.normalizeTokenProperties([property]);
+            (shape as any).applyToken(token, normalizedProperties as any);
+        }
     }
 
     private static applySafeFontWeight(text: Text, requestedWeight: string | number): void {
