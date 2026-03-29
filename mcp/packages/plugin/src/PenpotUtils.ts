@@ -786,6 +786,490 @@ export class PenpotUtils {
         return { pages: pageEnsure.pages, frames };
     }
 
+    public static listScreenPages(): Array<{ id: string; name: string; plainName: string; sequenceId: number | null }> {
+        return this.getPages().filter((page) => page.plainName.startsWith("Screens/"));
+    }
+
+    public static createScreenPage(params: {
+        name: string;
+        devices: DeviceKind[];
+    }): {
+        pages: Array<{ id: string; name: string; created: boolean }>;
+        frames: Array<{ id: string; name: string; pageId: string; pageName: string; created: boolean }>;
+    } {
+        const screenPageName = `Screens/${params.name}`;
+        this.ensurePageStructure({
+            includeComponents: true,
+            screens: [screenPageName],
+            openPageName: screenPageName,
+        });
+        return this.ensureFrameScaffolding({
+            name: params.name,
+            buildTarget: "screen",
+            devices: params.devices,
+            screenPageName,
+            confirmed: true,
+        });
+    }
+
+    public static createScreenShell(params: {
+        name: string;
+        root: WidgetNode;
+        pageId?: string;
+        screenPageName?: string;
+    }): {
+        page: { id: string; name: string };
+        root: WidgetTreeNodeResult;
+        nodes: WidgetTreeNodeResult[];
+    } {
+        const page =
+            (params.pageId ? this.getPageById(params.pageId) : null) ??
+            (params.screenPageName ? this.getPageByName(params.screenPageName) : null);
+        if (!page) {
+            throw new Error("Could not resolve target screen page for screen shell creation. Provide pageId or screenPageName.");
+        }
+        if (!this.getPlainPageName(page.name).startsWith("Screens/")) {
+            throw new Error(`Screen shells must be created on a Screens/* page. Current target is ${page.name}.`);
+        }
+
+        const rootNode: WidgetNode = {
+            ...params.root,
+            name: params.name,
+        };
+        const result = this.createWidgetTree(rootNode, page.id);
+        return {
+            page: { id: page.id, name: page.name },
+            root: result.root,
+            nodes: result.nodes,
+        };
+    }
+
+    public static createComponentShell(params: {
+        name: string;
+        root: WidgetNode;
+        componentPageName?: string;
+        category?: string;
+    }): {
+        page: { id: string; name: string };
+        root: WidgetTreeNodeResult;
+        nodes: WidgetTreeNodeResult[];
+        category: string;
+    } {
+        const componentPageName = params.componentPageName ?? "_Components";
+        const pageEnsure = this.ensurePageStructure({
+            includeComponents: true,
+            openPageName: componentPageName,
+        });
+        const page = this.getPageByName(componentPageName);
+        if (!page) {
+            throw new Error(`Could not resolve component page: ${componentPageName}`);
+        }
+
+        const rootNode: WidgetNode = {
+            type: (params.root as any)?.type ?? "board",
+            ...params.root,
+            name: params.name,
+        };
+        if (!rootNode.children || rootNode.children.length === 0) {
+            throw new Error("Component shell needs at least one child node.");
+        }
+        const result = this.createWidgetTree(rootNode, page.id);
+        const rootShape = this.findShapeOnPageById(page, result.root.id);
+        if (!rootShape) {
+            throw new Error(`Created component shell root not found on page: ${result.root.id}`);
+        }
+
+        this.stageMainComponentInComponentsPage(rootShape, params.name, page, params.category);
+        rootShape.name = this.ensureWidgetDisplayName(this.getPlainWidgetName(params.name), rootNode.id || this.slugify(params.name));
+
+        return {
+            page: pageEnsure.activePage ?? { id: page.id, name: page.name },
+            root: {
+                ...result.root,
+                name: rootShape.name,
+            },
+            nodes: result.nodes,
+            category: params.category ?? this.inferComponentCategory(params.name),
+        };
+    }
+
+    public static organizeShapeInComponentsPage(params: {
+        shapeId: string;
+        componentName?: string;
+        category?: string;
+        pageId?: string;
+    }): {
+        page: { id: string; name: string };
+        shape: { id: string; name: string };
+        category: string;
+    } {
+        const shape = this.findShapeById(params.shapeId);
+        if (!shape) {
+            throw new Error(`Shape not found: ${params.shapeId}`);
+        }
+
+        const page = params.pageId ? this.getPageById(params.pageId) : this.getPageForShape(shape);
+        if (!page) {
+            throw new Error("Could not resolve page for shape organization.");
+        }
+        if (this.getPlainPageName(page.name) !== "_Components") {
+            throw new Error(`Shape ${shape.id} is on ${page.name}. Organizing components is only supported on _Components.`);
+        }
+
+        const componentName = params.componentName?.trim() || this.getPlainWidgetName(shape.name || "Component");
+        this.stageMainComponentInComponentsPage(shape, componentName, page, params.category);
+        shape.name = this.ensureWidgetDisplayName(componentName, this.readWidgetPluginData(shape).id || this.slugify(componentName), this.readWidgetPluginData(shape).sequence ?? undefined);
+
+        return {
+            page: { id: page.id, name: page.name },
+            shape: { id: shape.id, name: shape.name },
+            category: params.category ?? this.inferComponentCategory(componentName),
+        };
+    }
+
+    public static publishComponentsFromComponentsPage(params?: {
+        pageId?: string;
+        shapeIds?: string[];
+        componentPageName?: string;
+    }): {
+        page: { id: string; name: string };
+        published: Array<{
+            shapeId: string;
+            shapeName: string;
+            componentId: string;
+            componentName: string;
+            componentPath: string;
+        }>;
+        skipped: Array<{ shapeId?: string; shapeName: string; reason: string }>;
+    } {
+        const page = params?.pageId
+            ? this.getPageById(params.pageId)
+            : this.getPageByName(params?.componentPageName ?? "_Components");
+        if (!page) {
+            throw new Error("Could not resolve _Components page for component publication.");
+        }
+        if (this.getPlainPageName(page.name) !== "_Components") {
+            throw new Error(`Component publication expects _Components; got ${page.name}.`);
+        }
+
+        const candidates = (params?.shapeIds?.length
+            ? params.shapeIds.map((id) => this.findShapeOnPageById(page, id)).filter((shape): shape is Shape => !!shape)
+            : this.getPageRootChildren(page).filter((shape) => {
+                  if (shape.type === "text" && shape.getPluginData(`${this.WIDGET_PLUGIN_PREFIX}.componentCategoryLabel`)) {
+                      return false;
+                  }
+                  return ["board", "group", "rectangle"].includes(shape.type);
+              })) as Shape[];
+
+        const published: Array<{
+            shapeId: string;
+            shapeName: string;
+            componentId: string;
+            componentName: string;
+            componentPath: string;
+        }> = [];
+        const skipped: Array<{ shapeId?: string; shapeName: string; reason: string }> = [];
+
+        for (const shape of candidates) {
+            try {
+                const componentName = this.getPlainWidgetName(shape.name || "Component");
+                this.stageMainComponentInComponentsPage(shape, componentName, page);
+                const result = this.createMainComponentFromShape({
+                    shapeId: shape.id,
+                    componentName,
+                    componentPageName: "_Components",
+                });
+                published.push({
+                    shapeId: shape.id,
+                    shapeName: shape.name,
+                    componentId: result.component.id,
+                    componentName: result.component.name,
+                    componentPath: result.component.path,
+                });
+            } catch (error) {
+                skipped.push({
+                    shapeId: shape.id,
+                    shapeName: shape.name,
+                    reason: String(error),
+                });
+            }
+        }
+
+        return {
+            page: { id: page.id, name: page.name },
+            published,
+            skipped,
+        };
+    }
+
+    public static validateComponentsPageLayout(params?: {
+        pageId?: string;
+        componentPageName?: string;
+    }): {
+        page: { id: string; name: string };
+        summary: { categoryLabelCount: number; componentCount: number; overlapCount: number };
+        findings: Array<{ severity: "high" | "medium" | "low"; code: string; message: string; shapeId?: string; shapeName?: string }>;
+    } {
+        const page = params?.pageId
+            ? this.getPageById(params.pageId)
+            : this.getPageByName(params?.componentPageName ?? "_Components");
+        if (!page) {
+            throw new Error("Could not resolve _Components page for layout validation.");
+        }
+        if (this.getPlainPageName(page.name) !== "_Components") {
+            throw new Error(`Component page validation expects _Components; got ${page.name}.`);
+        }
+
+        const shapes = this.getPageRootChildren(page);
+        const labels = shapes.filter((shape) => shape.getPluginData(`${this.WIDGET_PLUGIN_PREFIX}.componentCategoryLabel`));
+        const components = shapes.filter((shape) => !shape.getPluginData(`${this.WIDGET_PLUGIN_PREFIX}.componentCategoryLabel`) && shape.type !== "text");
+        const findings: Array<{ severity: "high" | "medium" | "low"; code: string; message: string; shapeId?: string; shapeName?: string }> = [];
+        let overlapCount = 0;
+
+        const boundsOf = (shape: Shape) => this.getBounds(shape);
+        for (let i = 0; i < components.length; i++) {
+            const a = components[i];
+            const aBounds = boundsOf(a);
+            if (!aBounds) {
+                continue;
+            }
+            for (let j = i + 1; j < components.length; j++) {
+                const b = components[j];
+                const bBounds = boundsOf(b);
+                if (!bBounds) {
+                    continue;
+                }
+                const overlaps =
+                    aBounds.x < bBounds.x + bBounds.width &&
+                    aBounds.x + aBounds.width > bBounds.x &&
+                    aBounds.y < bBounds.y + bBounds.height &&
+                    aBounds.y + aBounds.height > bBounds.y;
+                if (overlaps) {
+                    overlapCount += 1;
+                    findings.push({
+                        severity: "high",
+                        code: "component-overlap",
+                        message: `Components overlap on the _Components canvas: ${a.name} and ${b.name}.`,
+                        shapeId: a.id,
+                        shapeName: a.name,
+                    });
+                }
+            }
+        }
+
+        const uncategorized = components.filter((shape) => !shape.getPluginData(`${this.WIDGET_PLUGIN_PREFIX}.componentCategory`));
+        for (const shape of uncategorized) {
+            findings.push({
+                severity: "medium",
+                code: "missing-component-category",
+                message: "Component shell is missing a category assignment on _Components.",
+                shapeId: shape.id,
+                shapeName: shape.name,
+            });
+        }
+
+        return {
+            page: { id: page.id, name: page.name },
+            summary: {
+                categoryLabelCount: labels.length,
+                componentCount: components.length,
+                overlapCount,
+            },
+            findings,
+        };
+    }
+
+    public static lintScreenComposition(params?: { pageId?: string }): {
+        page: { id: string; name: string };
+        summary: { topLevelCount: number; componentInstanceCount: number; rawBoardCount: number };
+        findings: Array<{ severity: "high" | "medium" | "low"; code: string; message: string; shapeId?: string; shapeName?: string }>;
+    } {
+        const page = params?.pageId ? this.getPageById(params.pageId) : penpot.currentPage;
+        if (!page) {
+            throw new Error("No active page available for screen lint.");
+        }
+        if (!this.getPlainPageName(page.name).startsWith("Screens/")) {
+            throw new Error(`Screen lint expects a Screens/* page; got ${page.name}.`);
+        }
+
+        const base = this.inspectUnsafeConstructionPatterns({ pageId: page.id });
+        return {
+            page: base.page,
+            summary: {
+                topLevelCount: base.summary.topLevelCount,
+                componentInstanceCount: base.summary.componentInstanceCount,
+                rawBoardCount: base.summary.rawBoardCount,
+            },
+            findings: base.findings,
+        };
+    }
+
+    public static createTextBlock(params: {
+        name: string;
+        text: string;
+        pageId?: string;
+        targetShapeId?: string;
+        width?: number;
+        fontSize?: number;
+        textColorToken?: string;
+        typographyToken?: string;
+    }): {
+        root: WidgetTreeNodeResult;
+        nodes: WidgetTreeNodeResult[];
+        parentId: string | null;
+    } {
+        const root: WidgetNode = {
+            type: "board",
+            name: params.name,
+            role: "text-block",
+            tokens: {
+                ...(params.targetShapeId ? {} : { fill: "color.surface.card", borderRadius: "radius.md" }),
+            },
+            layout: {
+                kind: "column",
+                width: params.width ?? "hug",
+                height: "hug",
+                gap: 8,
+                padding: params.targetShapeId ? 0 : 12,
+            },
+            children: [
+                {
+                    type: "text",
+                    name: `${params.name} Text`,
+                    role: "text",
+                    props: {
+                        text: params.text,
+                        fontSize: params.fontSize ?? 16,
+                        width: params.width ?? 240,
+                    },
+                    tokens: {
+                        ...(params.textColorToken ? { fill: params.textColorToken } : { fill: "color.text.primary" }),
+                        ...(params.typographyToken ? { typography: params.typographyToken } : {}),
+                    },
+                    childLayout: {
+                        absolute: false,
+                        horizontalSizing: "fill",
+                        verticalSizing: "auto",
+                        alignSelf: "stretch",
+                    },
+                },
+            ],
+        };
+        const result = this.createWidgetTree(root, params.pageId);
+
+        if (params.targetShapeId) {
+            const dock = this.dockShapeIntoContainer({
+                shapeId: result.root.id,
+                targetShapeId: params.targetShapeId,
+                childLayout: {
+                    absolute: false,
+                    horizontalSizing: "fill",
+                    verticalSizing: "auto",
+                    alignSelf: "stretch",
+                },
+                fit: "none",
+                inset: 0,
+            }) as { parentId?: string | null };
+            return {
+                root: result.root,
+                nodes: result.nodes,
+                parentId: dock.parentId ?? null,
+            };
+        }
+
+        return {
+            root: result.root,
+            nodes: result.nodes,
+            parentId: null,
+        };
+    }
+
+    public static createComponentVariant(params: {
+        componentIds: string[];
+        propertyName?: string;
+        variantValues?: string[];
+        containerName?: string;
+        pageId?: string;
+    }): object {
+        return this.createVariantGroupFromComponents(params);
+    }
+
+    public static applyComponentVariantOverrides(params: {
+        instanceShapeId: string;
+        pageId?: string;
+        variantOverrides: Record<string, string>;
+    }): {
+        oldInstanceId: string;
+        newInstanceId: string;
+        componentId: string;
+        componentName: string;
+        variantProps: Record<string, string> | null;
+    } {
+        const page = params.pageId ? this.getPageById(params.pageId) : penpot.currentPage;
+        if (!page) {
+            throw new Error("No active page available for variant overrides.");
+        }
+        const instanceShape = this.findShapeOnPageById(page, params.instanceShapeId);
+        if (!instanceShape || !instanceShape.isComponentInstance()) {
+            throw new Error(`Shape is not a component instance: ${params.instanceShapeId}`);
+        }
+        const libraryComponent = instanceShape.component() as any;
+        if (!libraryComponent) {
+            throw new Error("Could not resolve the source component for the instance.");
+        }
+
+        const currentVariantProps = libraryComponent.variantProps ?? {};
+        const targetVariantProps = { ...currentVariantProps, ...params.variantOverrides };
+        const localComponents = this.listLocalComponents({ limit: 500 });
+        const family = localComponents.filter((entry) => {
+            const samePath =
+                (entry.componentPath && libraryComponent.path && entry.componentPath === libraryComponent.path) ||
+                entry.componentName === libraryComponent.name;
+            return samePath;
+        });
+
+        const matched = family.find((entry) => {
+            const props = entry.variantProps ?? {};
+            return Object.entries(targetVariantProps).every(([key, value]) => props[key] === value);
+        });
+        if (!matched) {
+            throw new Error(`No local variant matched the requested overrides: ${JSON.stringify(targetVariantProps)}`);
+        }
+
+        const parent = instanceShape.parent as Shape | null;
+        const x = (instanceShape as any).x;
+        const y = (instanceShape as any).y;
+        const parentIndex = parent && "children" in parent && parent.children ? parent.children.findIndex((child) => child.id === instanceShape.id) : -1;
+        const layoutChildSnapshot = (instanceShape as any).layoutChild ? JSON.parse(JSON.stringify((instanceShape as any).layoutChild)) : null;
+
+        const localComponent = (penpot.library.local.components as any[]).find((entry) => entry.id === matched.componentId);
+        if (!localComponent) {
+            throw new Error(`Matched local variant component not found: ${matched.componentId}`);
+        }
+        const newInstance = localComponent.instance();
+        newInstance.x = x;
+        newInstance.y = y;
+        if (parent && "appendChild" in parent) {
+            (parent as any).appendChild(newInstance);
+            if (parentIndex >= 0 && "setParentIndex" in newInstance) {
+                (newInstance as any).setParentIndex(parentIndex);
+            }
+        }
+        if (layoutChildSnapshot && (newInstance as any).layoutChild) {
+            Object.assign((newInstance as any).layoutChild, layoutChildSnapshot);
+        }
+
+        instanceShape.remove();
+
+        return {
+            oldInstanceId: params.instanceShapeId,
+            newInstanceId: newInstance.id,
+            componentId: localComponent.id,
+            componentName: localComponent.name,
+            variantProps: localComponent.variantProps ?? null,
+        };
+    }
+
     public static createMainComponentFromShape(params: CreateMainComponentParams): {
         component: {
             id: string;
@@ -923,8 +1407,13 @@ export class PenpotUtils {
         };
     }
 
-    private static stageMainComponentInComponentsPage(mainInstance: Shape, componentName: string, page: Page): void {
-        const category = this.inferComponentCategory(componentName);
+    private static stageMainComponentInComponentsPage(
+        mainInstance: Shape,
+        componentName: string,
+        page: Page,
+        categoryOverride?: string
+    ): void {
+        const category = categoryOverride ?? this.inferComponentCategory(componentName);
         const label = this.ensureComponentCategoryLabel(page, category);
         const siblings = this.getComponentCategorySiblings(page, category).filter((shape) => shape.id !== mainInstance.id);
         const labelBounds = this.getBounds(label);

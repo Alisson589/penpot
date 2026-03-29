@@ -13,7 +13,6 @@ import { ExportShapeTool } from "./tools/ExportShapeTool";
 import { ImportImageTool } from "./tools/ImportImageTool";
 import { ReplServer } from "./ReplServer";
 import { ApiDocs } from "./ApiDocs";
-import { CreateWidgetTreeTool } from "./tools/CreateWidgetTreeTool";
 import { FindLibraryComponentsTool } from "./tools/FindLibraryComponentsTool";
 import { InstantiateLibraryComponentTool } from "./tools/InstantiateLibraryComponentTool";
 import { DockShapeIntoContainerTool } from "./tools/DockShapeIntoContainerTool";
@@ -45,6 +44,18 @@ import { InspectUnsafeConstructionPatternsTool } from "./tools/InspectUnsafeCons
 import { DiagnoseExportShapeTool } from "./tools/DiagnoseExportShapeTool";
 import { RecommendedToolFlowTool } from "./tools/RecommendedToolFlowTool";
 import { FirstToolRecommendedFlowTool } from "./tools/FirstToolRecommendedFlowTool";
+import { ListScreenPagesTool } from "./tools/ListScreenPagesTool";
+import { CreateComponentShellTool } from "./tools/CreateComponentShellTool";
+import { OrganizeComponentInComponentsPageTool } from "./tools/OrganizeComponentInComponentsPageTool";
+import { PublishComponentsFromComponentsPageTool } from "./tools/PublishComponentsFromComponentsPageTool";
+import { PlaceComponentOnScreenTool } from "./tools/PlaceComponentOnScreenTool";
+import { CreateScreenPageTool } from "./tools/CreateScreenPageTool";
+import { CreateScreenShellTool } from "./tools/CreateScreenShellTool";
+import { ValidateComponentsPageLayoutTool } from "./tools/ValidateComponentsPageLayoutTool";
+import { LintScreenCompositionTool } from "./tools/LintScreenCompositionTool";
+import { CreateTextBlockTool } from "./tools/CreateTextBlockTool";
+import { CreateComponentVariantTool } from "./tools/CreateComponentVariantTool";
+import { ApplyComponentVariantOverridesTool } from "./tools/ApplyComponentVariantOverridesTool";
 
 /**
  * Session context for request-scoped data.
@@ -196,9 +207,21 @@ export class PenpotMcpServer {
             new InspectUnsafeConstructionPatternsTool(this),
             new EnsurePageStructureTool(this),
             new EnsureFrameScaffoldingTool(this),
+            new CreateScreenPageTool(this),
+            new ListScreenPagesTool(this),
+            new CreateScreenShellTool(this),
+            new ValidateComponentsPageLayoutTool(this),
+            new LintScreenCompositionTool(this),
+            new CreateTextBlockTool(this),
             new FindLocalComponentsTool(this),
+            new CreateComponentShellTool(this),
+            new OrganizeComponentInComponentsPageTool(this),
+            new PublishComponentsFromComponentsPageTool(this),
+            new CreateComponentVariantTool(this),
+            new ApplyComponentVariantOverridesTool(this),
             new CreateMainComponentFromShapeTool(this),
             new CreateVariantGroupFromComponentsTool(this),
+            new PlaceComponentOnScreenTool(this),
             new ExportToFlutterTool(this),
             new GenerateFlutterDartTool(this),
             new ExecuteCodeTool(this),
@@ -207,7 +230,6 @@ export class PenpotMcpServer {
             new DockShapeIntoContainerTool(this),
             new InstantiateLibraryComponentIntoSlotTool(this),
             new InstantiateLocalComponentIntoSlotTool(this),
-            new CreateWidgetTreeTool(this),
             new HighLevelOverviewTool(this),
             new PenpotApiInfoTool(this, this.apiDocs),
             new DiagnoseExportShapeTool(this),

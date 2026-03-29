@@ -64,9 +64,16 @@ If the task is an update to existing UI, continue with:
 ### Components
 
 - Build reusable UI in `_Components` first.
+- Prefer `create_component_shell` to create the initial structured frame on `_Components`.
+- Use `organize_component_in_components_page` to restage or recategorize a shell without overlap.
+- Use `validate_components_page_layout` to confirm `_Components` is still clean before publishing.
+- Use `publish_components_from_components_page` when multiple `_Components` shells are ready for the local library.
 - Promote a prepared frame to a main component with `create_main_component_from_shape`.
 - Reuse existing local components with `find_local_components` before creating a new one.
+- Use `create_component_variant` when the user asks for a real state/size/mode variation.
+- Use `apply_component_variant_overrides` to switch an existing instance to another local variant.
 - On screens, place only instances:
+  - `place_component_on_screen`
   - `instantiate_local_component_into_slot`
   - `instantiate_library_component_into_slot`
 - If only text changes, use `apply_instance_text_overrides`.
@@ -75,6 +82,7 @@ If the task is an update to existing UI, continue with:
 ### Text
 
 - Text inside a component must live in an inner frame with layout.
+- Prefer `create_text_block` when the task is mainly “add/edit text safely”.
 - Do not leave text as a free absolute child of the component root.
 - Use tokenized typography and color where possible.
 - If text creation fails in a session, verify connection first and prefer the high-level tools over raw `execute_code`.
@@ -96,19 +104,23 @@ Do not treat `_Tokens` as the source of truth. The Penpot token catalog is the s
 
 For a new screen:
 
-1. Ensure `_Components` and the target `Screens/...` page exist.
-2. Create or reuse reusable components in `_Components`.
-3. Promote them to local components.
-4. Instantiate them on the screen.
-5. Apply instance overrides.
-6. Apply design tokens.
-7. Run safety checks if the result looks suspicious.
+1. Create or reuse the target page with `create_screen_page`.
+2. Create the root screen shell with `create_screen_shell`.
+3. Create or reuse reusable components in `_Components`.
+4. Validate `_Components` layout if several shells were created in a row.
+4. Publish them into the local library.
+5. Instantiate them on the screen with `place_component_on_screen`.
+6. Apply instance overrides.
+7. Apply design tokens.
+8. Run safety checks if the result looks suspicious.
 
 For a new widget:
 
-1. Create the widget frame in `_Components`.
-2. Promote to local component.
-3. If the user wants a demo screen, instantiate it on a `Screens/...` page after that.
+1. Create the widget shell in `_Components` with `create_component_shell`.
+2. Organize it on the `_Components` canvas.
+3. Validate `_Components` layout when multiple shells/categories are involved.
+4. Publish it into the local library.
+5. If the user wants a demo screen, instantiate it on a `Screens/...` page after that.
 
 ## Unsafe Patterns To Avoid
 
@@ -165,7 +177,8 @@ If the file feels corrupted or unsafe:
 
 1. `inspect_unsafe_construction_patterns`
 2. `inspect_design_token_usage`
-3. `diagnose_export_shape`
+3. `lint_screen_composition`
+4. `diagnose_export_shape`
 
 ## Reference
 

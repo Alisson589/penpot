@@ -15,12 +15,17 @@
 4. `plan_ui_build`
 5. confirm with the user
 6. `confirm_structural_setup`
-7. `ensure_frame_scaffolding`
-8. build or reuse components in `_Components`
-9. `create_main_component_from_shape`
-10. `instantiate_local_component_into_slot`
-11. `apply_instance_text_overrides`
-12. `apply_design_tokens_to_shape`
+7. `create_screen_page`
+8. `create_screen_shell`
+9. build or reuse components in `_Components`
+10. `create_component_shell`
+11. `organize_component_in_components_page`
+12. `validate_components_page_layout`
+13. `publish_components_from_components_page`
+14. `place_component_on_screen`
+15. `apply_instance_text_overrides`
+16. `apply_component_variant_overrides` when the target instance must switch variant
+17. `apply_design_tokens_to_shape`
 
 ## Update Existing Screen
 
@@ -28,10 +33,26 @@
 2. `plugin_connection_status`
 3. `inspect_project_setup`
 4. `inspect_canvas`
-5. `find_local_components`
-6. `inspect_design_tokens`
-7. `inspect_design_token_usage`
-8. mutate the smallest safe surface possible
+5. `list_screen_pages`
+6. `find_local_components`
+7. `inspect_design_tokens`
+8. `inspect_design_token_usage`
+9. `create_text_block` for new text inside layout-safe containers
+10. `apply_instance_text_overrides` for content-only changes
+11. mutate the smallest safe surface possible
+
+## Component Library Work
+
+1. `first_tool_recommended_flow`
+2. `plugin_connection_status`
+3. `inspect_project_setup`
+4. `find_local_components`
+5. `create_component_shell`
+6. `organize_component_in_components_page`
+7. `validate_components_page_layout`
+8. `publish_components_from_components_page`
+9. `create_component_variant` if the component needs a real variant family
+10. `apply_component_variant_overrides` only after the variant family already exists
 
 ## Diagnose Unsafe Work
 

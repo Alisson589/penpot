@@ -12,8 +12,9 @@ When the user asks to create a screen, widget, dashboard, or other UI:
   * Structural creation requires explicit user confirmation. After confirmation, use `confirm_structural_setup` and/or `ensure_frame_scaffolding`.
   * Do not create visual content before parent frames/boards exist.
   * Treat the Penpot token catalog as the source of truth. `_Tokens` pages are documentation only.
-  * Prefer library components first, then build shells/slots with `create_widget_tree`.
-  * Build reusable widgets in `_Components` first. Promote them to local components there, then place only instances on screen pages.
+  * Prefer library components first.
+  * Build reusable widgets in `_Components` first using `create_component_shell`, then promote them to local components there, then place only instances on screen pages.
+  * Use `create_screen_page` and `create_screen_shell` for screen scaffolding before placing reusable instances.
   * Do not create separate main components just because the content differs. Use one main component plus instance overrides, or variants when the structure changes.
   * Text inside a component must live inside an inner frame with layout. Do not leave text layers as free absolute children of the component root.
 
@@ -32,11 +33,22 @@ When you need to recover context or choose the next tool, follow this priority o
     - `confirm_structural_setup`
     - `ensure_frame_scaffolding`
   * Priority 3 — component-first construction:
+    - `create_component_shell`
+    - `organize_component_in_components_page`
+    - `validate_components_page_layout`
+    - `publish_components_from_components_page`
+    - `create_screen_page`
+    - `list_screen_pages`
+    - `create_screen_shell`
     - `find_local_components`
+    - `create_text_block`
+    - `create_component_variant`
+    - `apply_component_variant_overrides`
     - `create_main_component_from_shape`
     - `instantiate_local_component_into_slot`
+    - `place_component_on_screen`
     - `instantiate_library_component_into_slot`
-    - `create_widget_tree` for shells, slots, and glue containers only
+    - `create_widget_tree` only for low-level shells, slots, and glue containers when the dedicated tools do not fit
   * Priority 4 — token and instance refinement:
     - `apply_design_tokens_to_shape`
     - `apply_instance_text_overrides`
@@ -44,6 +56,7 @@ When you need to recover context or choose the next tool, follow this priority o
   * Priority 5 — export and diagnostics:
     - `export_to_flutter`
     - `generate_flutter_dart`
+    - `lint_screen_composition`
     - `diagnose_export_shape`
     - `export_shape`
   * Priority 6 — advanced escape hatch:

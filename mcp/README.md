@@ -261,6 +261,30 @@ Below is the practical role of the main MCP tools added in this workflow:
   - searches connected libraries like Pencil or Lucide
 - `find_local_components`
   - searches reusable components already created in the local file library
+- `create_component_shell`
+  - creates a structured reusable shell on `_Components` with safe layout defaults
+- `organize_component_in_components_page`
+  - moves/restages a shell in `_Components` so categories stay organized and non-overlapping
+- `publish_components_from_components_page`
+  - batch-publishes eligible `_Components` shells into the local library
+- `create_screen_page`
+  - creates or reuses a `Screens/*` page and its device frames
+- `list_screen_pages`
+  - lists the available `Screens/*` pages in the current file
+- `create_screen_shell`
+  - creates the safe parent shell of a screen before instances are placed on it
+- `validate_components_page_layout`
+  - lints `_Components` for overlap, missing categories, and staging hygiene
+- `lint_screen_composition`
+  - lints a `Screens/*` page for raw-shape-heavy or unsafe composition
+- `create_text_block`
+  - creates text inside an inner layout frame instead of leaving the text layer loose
+- `create_component_variant`
+  - groups existing local components into a real Penpot variant set
+- `apply_component_variant_overrides`
+  - switches a placed instance to another local variant while preserving position
+- `place_component_on_screen`
+  - places a local or connected-library component instance on a chosen `Screens/*` page
 - `create_widget_tree`
   - builds semantic shells, sections, slots, and safe container structures
 - `create_main_component_from_shape`
