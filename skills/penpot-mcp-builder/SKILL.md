@@ -64,7 +64,8 @@ If the task is an update to existing UI, continue with:
 ### Components
 
 - Build reusable UI in `_Components` first.
-- Prefer `create_component_shell` to create the initial structured frame on `_Components`; ele posiciona o shell no 0,0 para evitar captura e respeita o layout fornecido. Depois você move/publica.
+- Crie tokens primeiro (plan + setup) antes de qualquer componente.
+- Prefer `create_component_shell` para criar o frame inicial em `_Components`; posiciona no 0,0 para evitar captura e respeita o layout fornecido. Depois você move/publica.
 - Use `organize_component_in_components_page` to restage or recategorize a shell without overlap.
 - Use `validate_components_page_layout` to confirm `_Components` is still clean before publishing.
 - Use `publish_components_from_components_page` when multiple `_Components` shells are ready for the local library.

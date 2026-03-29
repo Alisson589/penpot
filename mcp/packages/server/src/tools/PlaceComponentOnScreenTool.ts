@@ -28,7 +28,7 @@ export class PlaceComponentOnScreenArgs {
         source: z.enum(["local", "library"]).describe("Whether the component comes from the local Penpot library or a connected library."),
         screenPageId: z.string().optional().describe("Optional target screen page id."),
         screenPageName: z.string().optional().describe("Optional target screen page name, for example `Screens/Home`."),
-        targetShapeId: z.string().describe("Id of the slot/container on the chosen screen that should receive the instance."),
+        targetShapeId: z.string().optional().describe("Id do slot/container na screen. Se ausente, usa o primeiro board da página."),
         componentId: z.string().optional().describe("Local component id for `source=local`."),
         componentName: z.string().optional().describe("Component name query. Used for both local and connected library placement."),
         componentPath: z.string().optional().describe("Component path query for local placement."),
@@ -45,7 +45,7 @@ export class PlaceComponentOnScreenArgs {
     source!: "local" | "library";
     screenPageId?: string;
     screenPageName?: string;
-    targetShapeId!: string;
+    targetShapeId?: string;
     componentId?: string;
     componentName?: string;
     componentPath?: string;
@@ -82,6 +82,14 @@ if (!page) {
   throw new Error("Target screen page could not be resolved.");
 }
 penpot.openPage(page);
+let targetId = params.targetShapeId;
+if (!targetId) {
+  const boards = penpotUtils.getPageRootChildren(page).filter(s => s.type === "board");
+  if (!boards.length) {
+    throw new Error("No board found on the target screen page to place the component.");
+  }
+  targetId = boards[0].id;
+}
 if (params.source === "local") {
   return penpotUtils.instantiateLocalComponentIntoSlot({
     componentId: params.componentId,
@@ -89,7 +97,7 @@ if (params.source === "local") {
     componentPath: params.componentPath,
     matchMode: params.matchMode,
     requireExactMatch: params.requireExactMatch,
-    targetShapeId: params.targetShapeId,
+    targetShapeId: targetId,
     pageId: page.id,
     childLayout: params.childLayout,
     fit: params.fit,
@@ -102,7 +110,7 @@ return penpotUtils.instantiateLibraryComponentIntoSlot({
   libraryName: params.libraryName,
   matchMode: params.matchMode,
   requireExactMatch: params.requireExactMatch,
-  targetShapeId: params.targetShapeId,
+  targetShapeId: targetId,
   pageId: page.id,
   childLayout: params.childLayout,
   fit: params.fit,

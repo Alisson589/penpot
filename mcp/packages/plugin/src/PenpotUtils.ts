@@ -814,7 +814,7 @@ export class PenpotUtils {
 
     public static createScreenShell(params: {
         name: string;
-        root: WidgetNode;
+        root?: WidgetNode;
         pageId?: string;
         screenPageName?: string;
     }): {
@@ -832,10 +832,41 @@ export class PenpotUtils {
             throw new Error(`Screen shells must be created on a Screens/* page. Current target is ${page.name}.`);
         }
 
-        const rootNode: WidgetNode = {
-            ...params.root,
+        const rootNode: WidgetNode = params.root ?? {
+            type: "board",
             name: params.name,
+            role: "screen-shell",
+            tokens: {
+                fill: "color.surface",
+            },
+            layout: {
+                kind: "column",
+                width: "fill",
+                height: "fill",
+                padding: 24,
+                gap: 16,
+            },
+            children: [
+                {
+                    type: "board",
+                    name: `${params.name} Body`,
+                    role: "section",
+                    layout: {
+                        kind: "column",
+                        width: "fill",
+                        height: "fill",
+                        gap: 12,
+                    },
+                    tokens: {
+                        fill: "color.surface.card",
+                        borderRadius: "radius.md",
+                    },
+                    children: [],
+                },
+            ],
         };
+        rootNode.name = params.name;
+
         const result = this.createWidgetTree(rootNode, page.id);
         return {
             page: { id: page.id, name: page.name },
@@ -865,9 +896,10 @@ export class PenpotUtils {
             throw new Error(`Could not resolve component page: ${componentPageName}`);
         }
 
+        const { type: rootType, ...rest } = (params.root as any) ?? {};
         const rootNode: WidgetNode = {
-            type: (params.root as any)?.type ?? "board",
-            ...params.root,
+            type: rootType ?? "board",
+            ...rest,
             name: params.name,
         };
         if (!rootNode.children || rootNode.children.length === 0) {

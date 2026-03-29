@@ -9,13 +9,13 @@ import { ExecuteCodePluginTask } from "../tasks/ExecuteCodePluginTask";
 export class CreateScreenShellArgs {
     static schema = {
         name: z.string().min(1).describe("Root screen shell name."),
-        root: z.any().describe("Root widget tree definition for the screen shell."),
+        root: z.any().optional().describe("Optional root widget tree definition for the screen shell. If omitted, a default column shell is created."),
         pageId: z.string().optional().describe("Optional target screen page id."),
         screenPageName: z.string().optional().describe("Optional target screen page name, for example `Screens/Home`."),
     };
 
     name!: string;
-    root!: unknown;
+    root?: unknown;
     pageId?: string;
     screenPageName?: string;
 }

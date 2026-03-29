@@ -14,7 +14,8 @@ When the user asks to create a screen, widget, dashboard, or other UI:
   * Treat the Penpot token catalog as the source of truth. `_Tokens` pages are documentation only.
   * Prefer library components first.
   * Build reusable widgets in `_Components` primeiro com `create_component_shell` (posiciona no 0,0 para evitar captura; layout/posicionamento seguem o que você definir), depois promova a componente local, depois use apenas instâncias nas screens.
-  * Use `create_screen_page` and `create_screen_shell` for screen scaffolding before placing reusable instances.
+  * Crie tokens primeiro (`tokens plan`/`tokens setup` via CLI ou ferramentas equivalentes), depois componentes, depois screens.
+  * Use `create_screen_page` e `create_screen_shell` para scaffolding de screen antes de colocar instâncias reutilizáveis.
   * Do not create separate main components just because the content differs. Use one main component plus instance overrides, or variants when the structure changes.
   * Text inside a component must live inside an inner frame with layout. Do not leave text layers as free absolute children of the component root.
 
