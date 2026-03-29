@@ -13,6 +13,7 @@ import { ExportShapeTool } from "./tools/ExportShapeTool";
 import { ImportImageTool } from "./tools/ImportImageTool";
 import { ReplServer } from "./ReplServer";
 import { ApiDocs } from "./ApiDocs";
+import { CreateWidgetTreeTool } from "./tools/CreateWidgetTreeTool";
 
 /**
  * Session context for request-scoped data.
@@ -145,6 +146,7 @@ export class PenpotMcpServer {
     private initTools(): ToolInfo[] {
         const toolInstances: Tool<any>[] = [
             new ExecuteCodeTool(this),
+            new CreateWidgetTreeTool(this),
             new HighLevelOverviewTool(this),
             new PenpotApiInfoTool(this, this.apiDocs),
             new ExportShapeTool(this),

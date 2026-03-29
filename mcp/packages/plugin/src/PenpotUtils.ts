@@ -1,6 +1,70 @@
 import { Board, Bounds, Fill, FlexLayout, GridLayout, Page, Rectangle, Shape, Text } from "@penpot/plugin-types";
 
+type WidgetBreakpointKey = "compact" | "medium" | "expanded";
+type WidgetLayoutKind = "stack" | "row" | "column" | "grid";
+
+type WidgetPadding = {
+    top: number;
+    right: number;
+    bottom: number;
+    left: number;
+};
+
+type WidgetLayoutSpec = {
+    kind: WidgetLayoutKind;
+    width?: number | "fill" | "hug";
+    height?: number | "fill" | "hug";
+    gap?: number;
+    padding?: number | WidgetPadding;
+    align?: "start" | "end" | "center" | "stretch";
+    crossAlign?: "start" | "end" | "center" | "stretch";
+    justifyContent?: "start" | "center" | "end" | "space-between" | "space-around" | "space-evenly" | "stretch";
+    wrap?: "wrap" | "nowrap";
+    maxWidth?: number;
+    maxHeight?: number;
+    columns?: number;
+};
+
+type WidgetResponsiveOverride = {
+    layout?: Partial<WidgetLayoutSpec>;
+    visible?: boolean;
+    slotOrder?: string[];
+};
+
+type WidgetResponsiveSpec = Partial<Record<WidgetBreakpointKey, WidgetResponsiveOverride>>;
+
+type WidgetNode = {
+    id?: string;
+    type: string;
+    name?: string;
+    props?: Record<string, any>;
+    tokens?: Record<string, string>;
+    layout?: WidgetLayoutSpec;
+    responsive?: WidgetResponsiveSpec;
+    style?: {
+        fills?: Fill[];
+        radius?: number;
+        shadows?: Array<Record<string, any>>;
+    };
+    slots?: Record<string, string>;
+    children?: WidgetNode[];
+};
+
+type WidgetTreeNodeResult = {
+    id: string;
+    type: string;
+    name: string;
+    childIds: string[];
+};
+
+type WidgetTreeResult = {
+    root: WidgetTreeNodeResult;
+    nodes: WidgetTreeNodeResult[];
+};
+
 export class PenpotUtils {
+    private static readonly WIDGET_PLUGIN_PREFIX = "mcp.widget";
+
     /**
      * Generates an overview structure of the given shape,
      * providing its id, name and type, and recursively its children's attributes.
@@ -533,5 +597,363 @@ export class PenpotUtils {
         }
 
         return overview;
+    }
+
+    public static createWidgetTree(rootNode: WidgetNode, pageId?: string): WidgetTreeResult {
+        const page = pageId ? this.getPageById(pageId) : penpot.currentPage;
+        if (!page) {
+            throw new Error("No active page available for widget creation");
+        }
+
+        penpot.openPage(page);
+        const result = this.instantiateWidgetNode(this.expandBlueprint(rootNode), null, 0);
+        return {
+            root: result.summary,
+            nodes: result.nodes,
+        };
+    }
+
+    public static readWidgetTree(shapeId: string): WidgetTreeResult | null {
+        const shape = this.findShapeById(shapeId);
+        if (!shape) {
+            return null;
+        }
+
+        const nodes: WidgetTreeNodeResult[] = [];
+        const walk = (current: Shape): WidgetTreeNodeResult => {
+            const childIds = "children" in current && current.children ? current.children.map((child) => child.id) : [];
+            const node: WidgetTreeNodeResult = {
+                id: current.id,
+                type: current.getPluginData(`${this.WIDGET_PLUGIN_PREFIX}.type`) || current.type,
+                name: current.name || current.type,
+                childIds,
+            };
+            nodes.push(node);
+            if ("children" in current && current.children) {
+                for (const child of current.children) {
+                    walk(child);
+                }
+            }
+            return node;
+        };
+
+        const root = walk(shape);
+        return { root, nodes };
+    }
+
+    private static instantiateWidgetNode(
+        node: WidgetNode,
+        parent: Board | null,
+        childIndex: number
+    ): { rootShape: Shape; summary: WidgetTreeNodeResult; nodes: WidgetTreeNodeResult[] } {
+        const shape = this.createShapeForWidgetNode(node, childIndex);
+
+        if (parent) {
+            parent.appendChild(shape);
+        }
+
+        this.applyWidgetMetadata(shape, node, parent);
+        this.applyWidgetSizing(shape, node.layout);
+        this.applyWidgetStyle(shape, node.style);
+
+        const childSummaries: WidgetTreeNodeResult[] = [];
+        if (shape.type === "board" && node.children && node.children.length > 0) {
+            for (const [index, child] of node.children.entries()) {
+                const childNode = this.expandBlueprint(child);
+                const childResult = this.instantiateWidgetNode(childNode, shape as Board, index);
+                childSummaries.push(...childResult.nodes);
+            }
+        }
+
+        if (shape.type === "board" && node.layout) {
+            this.applyWidgetLayout(shape as Board, node.layout);
+        }
+
+        const summary: WidgetTreeNodeResult = {
+            id: shape.id,
+            type: node.type,
+            name: shape.name || node.type,
+            childIds: childSummaries
+                .filter((entry) => {
+                    if (!(shape.type === "board" && "children" in shape && shape.children)) {
+                        return false;
+                    }
+                    return shape.children.some((child) => child.id === entry.id);
+                })
+                .map((entry) => entry.id),
+        };
+
+        return {
+            rootShape: shape,
+            summary,
+            nodes: [summary, ...childSummaries],
+        };
+    }
+
+    private static createShapeForWidgetNode(node: WidgetNode, childIndex: number): Shape {
+        switch (node.type) {
+            case "text":
+                return this.createTextNode(node, childIndex);
+            case "rectangle":
+                return this.createRectangleNode(node, childIndex);
+            default:
+                return this.createBoardNode(node, childIndex);
+        }
+    }
+
+    private static createBoardNode(node: WidgetNode, childIndex: number): Board {
+        const board = penpot.createBoard();
+        board.name = node.name || node.type;
+        board.x = node.props?.x ?? 80 + childIndex * 24;
+        board.y = node.props?.y ?? 80 + childIndex * 24;
+        board.resize(node.props?.width ?? 320, node.props?.height ?? 180);
+        board.fills = node.style?.fills ?? [{ fillColor: "#FFFFFF", fillOpacity: 1 }];
+        if (typeof node.style?.radius === "number") {
+            board.borderRadius = node.style.radius;
+        }
+        return board;
+    }
+
+    private static createRectangleNode(node: WidgetNode, childIndex: number): Rectangle {
+        const rect = penpot.createRectangle();
+        rect.name = node.name || node.type;
+        rect.x = node.props?.x ?? 80 + childIndex * 24;
+        rect.y = node.props?.y ?? 80 + childIndex * 24;
+        rect.resize(node.props?.width ?? 160, node.props?.height ?? 120);
+        rect.fills = node.style?.fills ?? [{ fillColor: "#FFFFFF", fillOpacity: 1 }];
+        if (typeof node.style?.radius === "number") {
+            rect.borderRadius = node.style.radius;
+        }
+        return rect;
+    }
+
+    private static createTextNode(node: WidgetNode, childIndex: number): Text {
+        const text = penpot.createText(String(node.props?.text ?? node.name ?? ""));
+        if (!text) {
+            throw new Error(`Could not create text for widget type '${node.type}'`);
+        }
+        text.name = node.name || node.type;
+        text.x = node.props?.x ?? 80 + childIndex * 16;
+        text.y = node.props?.y ?? 80 + childIndex * 16;
+        if (typeof node.props?.fontSize === "number") {
+            text.fontSize = String(node.props.fontSize);
+        }
+        if (typeof node.props?.fontWeight === "string") {
+            text.fontWeight = node.props.fontWeight;
+        }
+        text.fills = node.style?.fills ?? [{ fillColor: "#111827", fillOpacity: 1 }];
+        return text;
+    }
+
+    private static applyWidgetMetadata(shape: Shape, node: WidgetNode, parent: Board | null): void {
+        const metadata: Record<string, string> = {
+            [`${this.WIDGET_PLUGIN_PREFIX}.type`]: node.type,
+            [`${this.WIDGET_PLUGIN_PREFIX}.version`]: "1",
+            [`${this.WIDGET_PLUGIN_PREFIX}.name`]: node.name || node.type,
+        };
+
+        if (node.id) {
+            metadata[`${this.WIDGET_PLUGIN_PREFIX}.id`] = node.id;
+        }
+        if (parent) {
+            metadata[`${this.WIDGET_PLUGIN_PREFIX}.parentId`] = parent.id;
+        }
+        if (node.props) {
+            metadata[`${this.WIDGET_PLUGIN_PREFIX}.props`] = JSON.stringify(node.props);
+        }
+        if (node.tokens) {
+            metadata[`${this.WIDGET_PLUGIN_PREFIX}.tokens`] = JSON.stringify(node.tokens);
+        }
+        if (node.responsive) {
+            metadata[`${this.WIDGET_PLUGIN_PREFIX}.responsive`] = JSON.stringify(node.responsive);
+        }
+        if (node.layout) {
+            metadata[`${this.WIDGET_PLUGIN_PREFIX}.layout`] = JSON.stringify(node.layout);
+        }
+
+        for (const [key, value] of Object.entries(metadata)) {
+            shape.setPluginData(key, value);
+        }
+    }
+
+    private static applyWidgetSizing(shape: Shape, layout?: WidgetLayoutSpec): void {
+        if (!layout || shape.type !== "board") {
+            return;
+        }
+
+        const board = shape as Board;
+        if (layout.width === "hug") {
+            board.horizontalSizing = "auto";
+        } else {
+            board.horizontalSizing = "fix";
+        }
+        if (layout.height === "hug") {
+            board.verticalSizing = "auto";
+        } else {
+            board.verticalSizing = "fix";
+        }
+    }
+
+    private static applyWidgetStyle(shape: Shape, style?: WidgetNode["style"]): void {
+        if (!style) {
+            return;
+        }
+
+        if ("fills" in shape && style.fills) {
+            shape.fills = style.fills;
+        }
+        if ("borderRadius" in shape && typeof style.radius === "number") {
+            // @ts-ignore borderRadius is shared by board/rectangle shape types
+            shape.borderRadius = style.radius;
+        }
+    }
+
+    private static applyWidgetLayout(container: Board, layout: WidgetLayoutSpec): void {
+        if (layout.kind === "row" || layout.kind === "column") {
+            const flex = this.addFlexLayout(container, layout.kind);
+            flex.wrap = layout.wrap ?? "nowrap";
+            if (layout.align) {
+                flex.alignItems = layout.align;
+            }
+            if (layout.crossAlign) {
+                flex.justifyItems = layout.crossAlign;
+            }
+            if (layout.justifyContent) {
+                flex.justifyContent = layout.justifyContent;
+            }
+            flex.rowGap = layout.gap ?? 0;
+            flex.columnGap = layout.gap ?? 0;
+            this.applyLayoutPadding(flex, layout.padding);
+            if (layout.width === "fill") {
+                flex.horizontalSizing = "fill";
+            } else if (layout.width === "hug") {
+                flex.horizontalSizing = "auto";
+            }
+            if (layout.height === "fill") {
+                flex.verticalSizing = "fill";
+            } else if (layout.height === "hug") {
+                flex.verticalSizing = "auto";
+            }
+            return;
+        }
+
+        if (layout.kind === "grid") {
+            const grid = container.addGridLayout();
+            grid.dir = "row";
+            grid.rowGap = layout.gap ?? 0;
+            grid.columnGap = layout.gap ?? 0;
+            this.applyLayoutPadding(grid, layout.padding);
+            const columns = Math.max(1, layout.columns ?? 2);
+            const childCount = container.children?.length ?? 0;
+            const rows = Math.max(1, Math.ceil(childCount / columns));
+            for (let col = 0; col < columns; col++) {
+                grid.addColumn("flex", 1);
+            }
+            for (let row = 0; row < rows; row++) {
+                grid.addRow("auto");
+            }
+            container.children.forEach((child, index) => {
+                const row = Math.floor(index / columns);
+                const column = index % columns;
+                grid.appendChild(child, row, column);
+            });
+        }
+    }
+
+    private static applyLayoutPadding(layout: FlexLayout | GridLayout, padding?: number | WidgetPadding): void {
+        if (padding === undefined) {
+            return;
+        }
+
+        if (typeof padding === "number") {
+            layout.topPadding = padding;
+            layout.rightPadding = padding;
+            layout.bottomPadding = padding;
+            layout.leftPadding = padding;
+            return;
+        }
+
+        layout.topPadding = padding.top;
+        layout.rightPadding = padding.right;
+        layout.bottomPadding = padding.bottom;
+        layout.leftPadding = padding.left;
+    }
+
+    private static expandBlueprint(node: WidgetNode): WidgetNode {
+        switch (node.type) {
+            case "dashboard_shell":
+                return {
+                    ...node,
+                    name: node.name || "Dashboard Shell",
+                    layout: node.layout || {
+                        kind: "column",
+                        gap: 24,
+                        padding: 24,
+                    },
+                    style: {
+                        fills: [{ fillColor: "#F5F7FB", fillOpacity: 1 }],
+                        radius: 24,
+                        ...node.style,
+                    },
+                };
+            case "metric_card": {
+                const props = node.props || {};
+                const accent = String(props.accent ?? "#2F6BFF");
+                return {
+                    ...node,
+                    name: node.name || "Metric Card",
+                    props: {
+                        width: 256,
+                        height: 140,
+                        ...props,
+                    },
+                    style: {
+                        fills: [{ fillColor: "#FFFFFF", fillOpacity: 1 }],
+                        radius: 20,
+                        ...node.style,
+                    },
+                    children: [
+                        {
+                            type: "rectangle",
+                            name: "Accent",
+                            props: { width: 256, height: 8, x: 0, y: 0 },
+                            style: {
+                                fills: [{ fillColor: accent, fillOpacity: 1 }],
+                                radius: 20,
+                            },
+                        },
+                        {
+                            type: "text",
+                            name: "Label",
+                            props: {
+                                text: String(props.label ?? "Label"),
+                                x: 24,
+                                y: 34,
+                                fontSize: 15,
+                                fontWeight: "400",
+                            },
+                            style: { fills: [{ fillColor: "#6B7280", fillOpacity: 1 }] },
+                        },
+                        {
+                            type: "text",
+                            name: "Value",
+                            props: {
+                                text: String(props.value ?? "Value"),
+                                x: 24,
+                                y: 70,
+                                fontSize: 30,
+                                fontWeight: "700",
+                            },
+                            style: { fills: [{ fillColor: "#111827", fillOpacity: 1 }] },
+                        },
+                    ],
+                };
+            }
+            default:
+                return {
+                    ...node,
+                    children: node.children?.map((child) => this.expandBlueprint(child)),
+                };
+        }
     }
 }

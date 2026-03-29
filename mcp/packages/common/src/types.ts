@@ -83,3 +83,71 @@ export interface ExecuteCodeTaskResultData<T> {
      */
     log: string;
 }
+
+export type WidgetBreakpointKey = "compact" | "medium" | "expanded";
+
+export type WidgetLayoutKind = "stack" | "row" | "column" | "grid";
+
+export interface WidgetPadding {
+    top: number;
+    right: number;
+    bottom: number;
+    left: number;
+}
+
+export interface WidgetLayoutSpec {
+    kind: WidgetLayoutKind;
+    width?: number | "fill" | "hug";
+    height?: number | "fill" | "hug";
+    gap?: number;
+    padding?: number | WidgetPadding;
+    align?: "start" | "end" | "center" | "stretch";
+    crossAlign?: "start" | "end" | "center" | "stretch";
+    justifyContent?: "start" | "center" | "end" | "space-between" | "space-around" | "space-evenly" | "stretch";
+    wrap?: "wrap" | "nowrap";
+    maxWidth?: number;
+    maxHeight?: number;
+    columns?: number;
+}
+
+export interface WidgetResponsiveOverride {
+    layout?: Partial<WidgetLayoutSpec>;
+    visible?: boolean;
+    slotOrder?: string[];
+}
+
+export type WidgetResponsiveSpec = Partial<Record<WidgetBreakpointKey, WidgetResponsiveOverride>>;
+
+export interface WidgetNode {
+    id?: string;
+    type: string;
+    name?: string;
+    props?: Record<string, unknown>;
+    tokens?: Record<string, string>;
+    layout?: WidgetLayoutSpec;
+    responsive?: WidgetResponsiveSpec;
+    style?: {
+        fills?: Array<Record<string, unknown>>;
+        radius?: number;
+        shadows?: Array<Record<string, unknown>>;
+    };
+    slots?: Record<string, string>;
+    children?: WidgetNode[];
+}
+
+export interface WidgetCreateTaskParams {
+    root: WidgetNode;
+    pageId?: string;
+}
+
+export interface WidgetTreeNodeResult {
+    id: string;
+    type: string;
+    name: string;
+    childIds: string[];
+}
+
+export interface WidgetTreeResult {
+    root: WidgetTreeNodeResult;
+    nodes: WidgetTreeNodeResult[];
+}

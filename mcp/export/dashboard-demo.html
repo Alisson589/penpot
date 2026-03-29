@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MCP Dashboard Demo</title>
+  <style>
+    :root {
+      --bg: #f5f7fb;
+      --panel: #ffffff;
+      --ink: #111827;
+      --muted: #6b7280;
+      --line: #e5e7eb;
+      --blue: #2f6bff;
+      --blue-soft: #93c5fd;
+      --green: #10b981;
+      --amber: #f59e0b;
+      --dark: #111827;
+      --dark-soft: #d1d5db;
+      --radius-xl: 24px;
+      --radius-lg: 20px;
+      --shadow: 0 18px 48px rgba(17, 24, 39, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", Arial, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(47, 107, 255, 0.08), transparent 24%),
+        linear-gradient(180deg, #eef3ff 0%, var(--bg) 28%, #eef2f7 100%);
+      display: grid;
+      place-items: center;
+      padding: 32px;
+    }
+
+    .dashboard {
+      width: min(1280px, 100%);
+      background: var(--bg);
+      border-radius: var(--radius-xl);
+      box-shadow: var(--shadow);
+      padding: 36px 40px 40px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 320px;
+      gap: 32px;
+    }
+
+    .hero {
+      grid-column: 1 / -1;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: clamp(2rem, 3vw, 2.25rem);
+      line-height: 1.1;
+    }
+
+    .subtitle {
+      margin: 0;
+      color: var(--muted);
+      font-size: 1rem;
+    }
+
+    .stats {
+      grid-column: 1 / 2;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 24px;
+    }
+
+    .card {
+      background: var(--panel);
+      border-radius: var(--radius-lg);
+      padding: 32px 24px 28px;
+      position: relative;
+      box-shadow: 0 10px 30px rgba(17, 24, 39, 0.05);
+    }
+
+    .card::before {
+      content: "";
+      position: absolute;
+      inset: 0 0 auto;
+      height: 8px;
+      border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+      background: var(--accent);
+    }
+
+    .card span {
+      display: block;
+      color: var(--muted);
+      font-size: 0.95rem;
+      margin-bottom: 14px;
+    }
+
+    .card strong {
+      font-size: clamp(1.9rem, 2.5vw, 2.2rem);
+      letter-spacing: -0.04em;
+    }
+
+    .chart-panel {
+      grid-column: 1 / 2;
+      background: var(--panel);
+      border-radius: var(--radius-xl);
+      padding: 28px 32px 24px;
+      box-shadow: 0 10px 30px rgba(17, 24, 39, 0.05);
+    }
+
+    .chart-panel h2,
+    .insights h2 {
+      margin: 0 0 24px;
+      font-size: 1.4rem;
+    }
+
+    .chart {
+      height: 320px;
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      align-items: end;
+      gap: 24px;
+      padding: 24px 0 0;
+      background:
+        linear-gradient(var(--line), var(--line)) 0 18% / 100% 2px no-repeat,
+        linear-gradient(var(--line), var(--line)) 0 40% / 100% 2px no-repeat,
+        linear-gradient(var(--line), var(--line)) 0 62% / 100% 2px no-repeat,
+        linear-gradient(var(--line), var(--line)) 0 84% / 100% 2px no-repeat;
+    }
+
+    .bar-wrap {
+      display: grid;
+      justify-items: center;
+      gap: 12px;
+    }
+
+    .bar {
+      width: 68px;
+      border-radius: 18px 18px 0 0;
+      background: var(--bar, var(--blue-soft));
+    }
+
+    .bar-wrap span {
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    .insights {
+      background: var(--dark);
+      border-radius: var(--radius-xl);
+      color: #fff;
+      padding: 32px;
+      box-shadow: 0 18px 40px rgba(17, 24, 39, 0.24);
+    }
+
+    .insights ul {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      display: grid;
+      gap: 26px;
+    }
+
+    .insights li {
+      display: grid;
+      grid-template-columns: 24px 1fr;
+      gap: 16px;
+      align-items: start;
+    }
+
+    .dot {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: var(--blue);
+      margin-top: 2px;
+    }
+
+    .insights strong {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 1rem;
+    }
+
+    .insights p {
+      margin: 0;
+      color: var(--dark-soft);
+      line-height: 1.5;
+    }
+
+    @media (max-width: 1080px) {
+      .dashboard {
+        grid-template-columns: 1fr;
+      }
+
+      .stats {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 720px) {
+      body {
+        padding: 16px;
+      }
+
+      .dashboard {
+        padding: 24px 20px;
+      }
+
+      .chart {
+        gap: 12px;
+      }
+
+      .bar {
+        width: 40px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="dashboard">
+    <section class="hero">
+      <h1>Revenue Dashboard</h1>
+      <p class="subtitle">Q1 performance snapshot</p>
+    </section>
+
+    <section class="stats">
+      <article class="card" style="--accent: var(--blue);">
+        <span>MRR</span>
+        <strong>$128K</strong>
+      </article>
+      <article class="card" style="--accent: var(--green);">
+        <span>Growth</span>
+        <strong>+18.4%</strong>
+      </article>
+      <article class="card" style="--accent: var(--amber);">
+        <span>Churn</span>
+        <strong>1.9%</strong>
+      </article>
+    </section>
+
+    <section class="chart-panel">
+      <h2>Monthly revenue</h2>
+      <div class="chart">
+        <div class="bar-wrap">
+          <div class="bar" style="height: 180px;"></div>
+          <span>Jan</span>
+        </div>
+        <div class="bar-wrap">
+          <div class="bar" style="height: 240px;"></div>
+          <span>Feb</span>
+        </div>
+        <div class="bar-wrap">
+          <div class="bar" style="height: 210px;"></div>
+          <span>Mar</span>
+        </div>
+        <div class="bar-wrap">
+          <div class="bar" style="height: 300px;"></div>
+          <span>Apr</span>
+        </div>
+        <div class="bar-wrap">
+          <div class="bar" style="height: 340px;"></div>
+          <span>May</span>
+        </div>
+        <div class="bar-wrap">
+          <div class="bar" style="height: 380px; --bar: var(--blue);"></div>
+          <span>Jun</span>
+        </div>
+      </div>
+    </section>
+
+    <aside class="insights">
+      <h2>Highlights</h2>
+      <ul>
+        <li>
+          <div class="dot"></div>
+          <div>
+            <strong>Best month</strong>
+            <p>June closed at $380K</p>
+          </div>
+        </li>
+        <li>
+          <div class="dot"></div>
+          <div>
+            <strong>Retention</strong>
+            <p>Churn stayed below 2%</p>
+          </div>
+        </li>
+        <li>
+          <div class="dot"></div>
+          <div>
+            <strong>Pipeline</strong>
+            <p>Enterprise deals up 24%</p>
+          </div>
+        </li>
+      </ul>
+    </aside>
+  </main>
+</body>
+</html>
