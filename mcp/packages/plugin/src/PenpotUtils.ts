@@ -50,6 +50,16 @@ type WidgetChildLayoutSpec = {
     maxHeight?: number | null;
 };
 
+type WidgetSpacingSystem = {
+    xxs: number;
+    xs: number;
+    sm: number;
+    md: number;
+    lg: number;
+    xl: number;
+    xxl: number;
+};
+
 type WidgetNode = {
     id?: string;
     type: string;
@@ -108,6 +118,16 @@ type DockShapeIntoContainerParams = {
     childLayout?: WidgetChildLayoutSpec;
     fit?: "none" | "contain" | "fill-width" | "fill-height" | "stretch";
     inset?: number;
+};
+
+const DEFAULT_WIDGET_SPACING_SYSTEM: WidgetSpacingSystem = {
+    xxs: 4,
+    xs: 8,
+    sm: 12,
+    md: 16,
+    lg: 24,
+    xl: 32,
+    xxl: 40,
 };
 
 export class PenpotUtils {
@@ -452,6 +472,7 @@ export class PenpotUtils {
 
         const targetBoard = targetShape.type === "board" ? (targetShape as Board) : null;
         if (targetBoard) {
+            this.ensureSlotContainerLayout(targetBoard, params.inset ?? DEFAULT_WIDGET_SPACING_SYSTEM.xs);
             this.applyWidgetChildLayout(
                 shape,
                 { type: "docked_shape", childLayout: params.childLayout ?? { absolute: false } },
@@ -484,18 +505,17 @@ export class PenpotUtils {
             detach: params.detach,
         });
 
+        const placement = this.inferLibrarySlotPlacement(instanceResult.match);
+
         const dockResult = this.dockShapeIntoContainer({
             shapeId: instanceResult.instanceId,
             targetShapeId: params.targetShapeId,
             childLayout:
                 params.childLayout ?? {
-                    absolute: false,
-                    horizontalSizing: "fill",
-                    verticalSizing: "fill",
-                    alignSelf: "stretch",
+                    ...placement.childLayout,
                 },
-            fit: params.fit ?? "contain",
-            inset: params.inset ?? 0,
+            fit: params.fit ?? placement.fit,
+            inset: params.inset ?? placement.inset,
         });
 
         return {
@@ -875,11 +895,19 @@ export class PenpotUtils {
         }
 
         penpot.openPage(page);
-        const result = this.instantiateWidgetNode(this.expandBlueprint(rootNode), null, 0);
-        return {
-            root: result.summary,
-            nodes: result.nodes,
-        };
+        const rootChildrenBefore = new Set<string>(this.getPageRootChildren(page).map((shape) => shape.id));
+        const normalizedRoot = this.prepareWidgetNode(this.expandBlueprint(rootNode), [0], 0, DEFAULT_WIDGET_SPACING_SYSTEM);
+
+        try {
+            const result = this.instantiateWidgetNode(normalizedRoot, null, 0);
+            return {
+                root: result.summary,
+                nodes: result.nodes,
+            };
+        } catch (error) {
+            this.rollbackTopLevelWidgetCreation(page, rootChildrenBefore);
+            throw error;
+        }
     }
 
     public static readWidgetTree(shapeId: string): WidgetTreeResult | null {
@@ -973,7 +1001,7 @@ export class PenpotUtils {
 
     private static createBoardNode(node: WidgetNode, childIndex: number): Board {
         const board = penpot.createBoard();
-        board.name = node.name || node.type;
+        board.name = this.getWidgetDisplayName(node);
         board.x = node.props?.x ?? 80 + childIndex * 24;
         board.y = node.props?.y ?? 80 + childIndex * 24;
         board.resize(node.props?.width ?? 320, node.props?.height ?? 180);
@@ -986,7 +1014,7 @@ export class PenpotUtils {
 
     private static createRectangleNode(node: WidgetNode, childIndex: number): Rectangle {
         const rect = penpot.createRectangle();
-        rect.name = node.name || node.type;
+        rect.name = this.getWidgetDisplayName(node);
         rect.x = node.props?.x ?? 80 + childIndex * 24;
         rect.y = node.props?.y ?? 80 + childIndex * 24;
         rect.resize(node.props?.width ?? 160, node.props?.height ?? 120);
@@ -1002,7 +1030,7 @@ export class PenpotUtils {
         if (!text) {
             throw new Error(`Could not create text for widget type '${node.type}'`);
         }
-        text.name = node.name || node.type;
+        text.name = this.getWidgetDisplayName(node);
         text.x = node.props?.x ?? 80 + childIndex * 16;
         text.y = node.props?.y ?? 80 + childIndex * 16;
         if (typeof node.props?.fontSize === "number") {
@@ -1022,9 +1050,7 @@ export class PenpotUtils {
             [`${this.WIDGET_PLUGIN_PREFIX}.name`]: node.name || node.type,
         };
 
-        if (node.id) {
-            metadata[`${this.WIDGET_PLUGIN_PREFIX}.id`] = node.id;
-        }
+        metadata[`${this.WIDGET_PLUGIN_PREFIX}.id`] = node.id || this.slugify(node.name || node.type);
         if (parent) {
             metadata[`${this.WIDGET_PLUGIN_PREFIX}.parentId`] = parent.id;
         }
@@ -1042,6 +1068,9 @@ export class PenpotUtils {
         }
         if (node.childLayout) {
             metadata[`${this.WIDGET_PLUGIN_PREFIX}.childLayout`] = JSON.stringify(node.childLayout);
+        }
+        if (node.props?.spacingSystem) {
+            metadata[`${this.WIDGET_PLUGIN_PREFIX}.spacingSystem`] = JSON.stringify(node.props.spacingSystem);
         }
 
         for (const [key, value] of Object.entries(metadata)) {
@@ -1184,6 +1213,91 @@ export class PenpotUtils {
         resize.call(shape, width, height);
     }
 
+    private static ensureSlotContainerLayout(container: Board, inset: number): void {
+        const padding = Math.max(inset, DEFAULT_WIDGET_SPACING_SYSTEM.xs);
+
+        if (!container.flex && !container.grid) {
+            const flex = this.addFlexLayout(container, "row");
+            flex.wrap = "nowrap";
+            flex.alignItems = "center";
+            flex.justifyContent = "center";
+            flex.rowGap = 0;
+            flex.columnGap = 0;
+            flex.topPadding = padding;
+            flex.rightPadding = padding;
+            flex.bottomPadding = padding;
+            flex.leftPadding = padding;
+            return;
+        }
+
+        if (container.flex) {
+            container.flex.alignItems = "center";
+            container.flex.justifyContent = "center";
+            container.flex.topPadding = Math.max(container.flex.topPadding ?? 0, padding);
+            container.flex.rightPadding = Math.max(container.flex.rightPadding ?? 0, padding);
+            container.flex.bottomPadding = Math.max(container.flex.bottomPadding ?? 0, padding);
+            container.flex.leftPadding = Math.max(container.flex.leftPadding ?? 0, padding);
+        }
+    }
+
+    private static inferLibrarySlotPlacement(match: LibraryComponentSummary): {
+        childLayout: WidgetChildLayoutSpec;
+        fit: "none" | "contain" | "fill-width" | "fill-height" | "stretch";
+        inset: number;
+    } {
+        const descriptor = `${match.componentPath ?? ""} ${match.componentName}`.toLowerCase();
+
+        if (descriptor.includes("input")) {
+            return {
+                childLayout: {
+                    absolute: false,
+                    horizontalSizing: "fill",
+                    verticalSizing: "auto",
+                    alignSelf: "stretch",
+                },
+                fit: "fill-width",
+                inset: DEFAULT_WIDGET_SPACING_SYSTEM.xs,
+            };
+        }
+
+        if (descriptor.includes("tabs")) {
+            return {
+                childLayout: {
+                    absolute: false,
+                    horizontalSizing: "auto",
+                    verticalSizing: "auto",
+                    alignSelf: "center",
+                },
+                fit: "contain",
+                inset: DEFAULT_WIDGET_SPACING_SYSTEM.xs,
+            };
+        }
+
+        if (descriptor.includes("avatar") || descriptor.includes("icon")) {
+            return {
+                childLayout: {
+                    absolute: false,
+                    horizontalSizing: "auto",
+                    verticalSizing: "auto",
+                    alignSelf: "center",
+                },
+                fit: "contain",
+                inset: DEFAULT_WIDGET_SPACING_SYSTEM.xxs,
+            };
+        }
+
+        return {
+            childLayout: {
+                absolute: false,
+                horizontalSizing: "auto",
+                verticalSizing: "auto",
+                alignSelf: "center",
+            },
+            fit: "contain",
+            inset: DEFAULT_WIDGET_SPACING_SYSTEM.xs,
+        };
+    }
+
     private static resolveChildHorizontalSizing(
         shape: Shape,
         node: WidgetNode,
@@ -1290,6 +1404,162 @@ export class PenpotUtils {
         layout.rightPadding = padding.right;
         layout.bottomPadding = padding.bottom;
         layout.leftPadding = padding.left;
+    }
+
+    private static prepareWidgetNode(
+        node: WidgetNode,
+        path: number[],
+        depth: number,
+        spacingSystem: WidgetSpacingSystem
+    ): WidgetNode {
+        const nodeSpacingSystem = this.resolveSpacingSystem(node, spacingSystem);
+        const ensuredId = node.id || this.buildWidgetId(node, path);
+        const ensuredName = this.ensureWidgetDisplayName(node.name || this.humanizeType(node.type), ensuredId);
+        const preparedChildren = node.children?.map((child, index) =>
+            this.prepareWidgetNode(child, [...path, index], depth + 1, nodeSpacingSystem)
+        );
+
+        const preparedNode: WidgetNode = {
+            ...node,
+            id: ensuredId,
+            name: ensuredName,
+            props: {
+                ...(node.props ?? {}),
+                ...(depth === 0 ? { spacingSystem: nodeSpacingSystem } : {}),
+            },
+            children: preparedChildren,
+        };
+
+        if (preparedNode.layout) {
+            preparedNode.layout = this.applyDefaultSpacingToLayout(preparedNode, depth, nodeSpacingSystem);
+        }
+
+        if (!preparedNode.childLayout && depth > 0) {
+            preparedNode.childLayout = this.defaultChildLayoutForNode(preparedNode);
+        }
+
+        return preparedNode;
+    }
+
+    private static resolveSpacingSystem(node: WidgetNode, fallback: WidgetSpacingSystem): WidgetSpacingSystem {
+        const raw = node.props?.spacingSystem;
+        if (!raw || typeof raw !== "object") {
+            return fallback;
+        }
+
+        return {
+            xxs: typeof raw.xxs === "number" ? raw.xxs : fallback.xxs,
+            xs: typeof raw.xs === "number" ? raw.xs : fallback.xs,
+            sm: typeof raw.sm === "number" ? raw.sm : fallback.sm,
+            md: typeof raw.md === "number" ? raw.md : fallback.md,
+            lg: typeof raw.lg === "number" ? raw.lg : fallback.lg,
+            xl: typeof raw.xl === "number" ? raw.xl : fallback.xl,
+            xxl: typeof raw.xxl === "number" ? raw.xxl : fallback.xxl,
+        };
+    }
+
+    private static applyDefaultSpacingToLayout(
+        node: WidgetNode,
+        depth: number,
+        spacingSystem: WidgetSpacingSystem
+    ): WidgetLayoutSpec {
+        const layout = { ...node.layout! };
+        const semanticName = `${node.type} ${node.name}`.toLowerCase();
+
+        if (layout.gap === undefined && (layout.kind === "row" || layout.kind === "column" || layout.kind === "grid")) {
+            layout.gap = semanticName.includes("toolbar") ? spacingSystem.xs : spacingSystem.md;
+        }
+
+        if (layout.padding === undefined && layout.kind !== "stack") {
+            if (depth === 0) {
+                layout.padding = spacingSystem.lg;
+            } else if (
+                /header|toolbar|panel|card|slot|block|section|shell|content|stack|row/.test(semanticName) ||
+                (node.children?.length ?? 0) > 0
+            ) {
+                layout.padding = semanticName.includes("slot") ? spacingSystem.xs : spacingSystem.md;
+            }
+        }
+
+        return layout;
+    }
+
+    private static defaultChildLayoutForNode(node: WidgetNode): WidgetChildLayoutSpec {
+        if (node.type === "text") {
+            return {
+                absolute: false,
+                horizontalSizing: "auto",
+                verticalSizing: "auto",
+            };
+        }
+
+        if (node.type === "rectangle") {
+            return {
+                absolute: false,
+                horizontalSizing: "fill",
+                verticalSizing: "fix",
+                alignSelf: "stretch",
+            };
+        }
+
+        return {
+            absolute: false,
+            horizontalSizing: "fill",
+            verticalSizing: "auto",
+            alignSelf: "stretch",
+        };
+    }
+
+    private static buildWidgetId(node: WidgetNode, path: number[]): string {
+        return `${this.slugify(node.name || node.type)}-${path.join("-")}`;
+    }
+
+    private static rollbackTopLevelWidgetCreation(page: Page, rootChildrenBefore: Set<string>): void {
+        for (const shape of this.getPageRootChildren(page)) {
+            if (rootChildrenBefore.has(shape.id)) {
+                continue;
+            }
+
+            try {
+                shape.remove();
+            } catch (_error) {
+                // ignore and continue with the fallback below
+            }
+
+            const stillPresent = this.getPageRootChildren(page).some((candidate) => candidate.id === shape.id);
+            if (stillPresent) {
+                shape.hidden = true;
+                shape.name = `[ROLLBACK FAILED] ${shape.name}`;
+            }
+        }
+    }
+
+    private static getPageRootChildren(page: Page): Shape[] {
+        const root = page.root as Shape & { children?: Shape[] };
+        return [...(root.children ?? [])];
+    }
+
+    private static getWidgetDisplayName(node: WidgetNode): string {
+        return this.ensureWidgetDisplayName(node.name || this.humanizeType(node.type), node.id || this.slugify(node.type));
+    }
+
+    private static ensureWidgetDisplayName(name: string, id: string): string {
+        const suffix = ` [${id}]`;
+        return name.endsWith(suffix) ? name : `${name}${suffix}`;
+    }
+
+    private static humanizeType(type: string): string {
+        return type
+            .replace(/[_-]+/g, " ")
+            .replace(/\b\w/g, (char) => char.toUpperCase());
+    }
+
+    private static slugify(value: string): string {
+        return value
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, "-")
+            .replace(/^-+|-+$/g, "")
+            .slice(0, 48);
     }
 
     private static expandBlueprint(node: WidgetNode): WidgetNode {

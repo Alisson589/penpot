@@ -73,6 +73,7 @@ export class InspectCanvasTool extends Tool<InspectCanvasArgs> {
             `});\n` +
             `const slots = boards.filter((board) => /slot/i.test(board.name));\n` +
             `const response = {\n` +
+            `  pages: penpotUtils.getPages(),\n` +
             `  file: { id: penpot.currentFile.id, name: penpot.currentFile.name },\n` +
             `  page: { id: page.id, name: page.name },\n` +
             `  topLevel,\n` +

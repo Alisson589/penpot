@@ -223,6 +223,10 @@ Common tasks - Quick Reference (ALWAYS use penpotUtils for these):
 
 When working with boards, slots, or nested containers, follow these rules strictly:
 
+  * Before creating or restructuring widgets, establish a reusable spacing system first.
+  * Prefer a shared spacing scale for both padding and margin, for example: 4, 8, 12, 16, 24, 32, 40.
+  * Do NOT place visible content directly against the edge of a board, panel, card, header, slot, or section. If a container visually wraps content, it must have padding.
+  * Prefer layout gap and container padding first; use child margins only when the spacing is intentionally asymmetric.
   * Call `plugin_connection_status` before any mutation if the plugin may have been rebuilt, reloaded, or reconnected.
   * Call `inspect_canvas` before concluding that a board, slot, or component instance is missing.
   * NEVER assume a board or slot is missing based only on a shallow lookup or an old cached id.
@@ -233,8 +237,23 @@ When working with boards, slots, or nested containers, follow these rules strict
     - a plugin session that is connected but attached to a different page context
   * After rebuilding or reloading the MCP plugin, assume previous MCP sessions may be stale. Re-initialize the MCP session and re-check `penpot.currentFile` / `penpot.currentPage` before mutating the document.
   * When instantiating a library component into a specific container, always prefer `instantiate_library_component` with `targetShapeId`.
+  * When docking library components into slots, ensure the slot itself participates in a layout and has internal padding, so the component aligns relative to the slot instead of floating inside it.
   * If `targetShapeId` is provided and the target cannot be found, treat that as a hard error and investigate the page tree; do NOT silently fall back to the page root.
   * After targeted instantiation, verify the result by checking the returned `parentId` and `targetShapeId`.
+  * Treat partial top-level creation as a failure mode. If a widget creation call fails partway through, the MCP should roll back the newly created top-level shapes from that call instead of leaving residue on the canvas.
+
+# Widget Identity And Page Identity
+
+When creating or editing widgets, preserve stable identity so the user can refer to items unambiguously.
+
+  * Every widget created through the MCP should have:
+    - a stable widget id
+    - a human-readable name
+    - a layer name that exposes both the human-readable name and the widget id
+  * Prefer display names in the form `Name [widget-id]`.
+  * Store widget identity in plugin data as well; layer naming is for user visibility, plugin data is for machine reliability.
+  * When discussing pages with the user or preparing a multi-page edit, always list page ids and page names together.
+  * Prefer `inspect_canvas` or `penpotUtils.getPages()` before making assumptions about the active page.
 
 # Canvas Inventory Protocol
 
@@ -249,6 +268,7 @@ Use this protocol:
 
   * Step 2: List the immediate canvas structure.
     - Prefer `inspect_canvas` for a direct MCP-level inventory.
+    - Record available pages with both page id and page name.
     - Inspect `penpot.currentPage.root.children`.
     - Record each direct child with at least `id`, `name`, and `type`.
     - This is the authoritative view for top-level canvas objects.
