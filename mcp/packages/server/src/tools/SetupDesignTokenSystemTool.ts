@@ -47,7 +47,7 @@ export class SetupDesignTokenSystemTool extends Tool<SetupDesignTokenSystemArgs>
         const sets = ["Core", "Semantic", ...(args.includeComponentSet ? ["Component"] : [])];
         const starterTokens = args.createStarterTokens === false ? [] : this.getStarterTokens(args.namingConvention, args.methodology);
 
-        const code = `
+const code = `
 const result = { sets: [], themes: [], links: [], starterTokens: [] };
 const primaryThemeName = ${JSON.stringify(themeNames[0])};
 for (const setName of ${JSON.stringify(sets)}) {
@@ -82,6 +82,15 @@ for (const themeName of ${JSON.stringify(themeNames)}) {
 for (const token of ${JSON.stringify(starterTokens)}) {
   result.starterTokens.push(penpotUtils.upsertDesignToken(token));
 }
+result.designSystem = penpotUtils.setDesignSystemMetadata({
+  name: ${JSON.stringify(args.systemName)},
+  namingConvention: ${JSON.stringify(args.namingConvention)},
+  scaleType: ${JSON.stringify(args.methodology)},
+  theme: ${JSON.stringify(themeNames[0])},
+  set: "Semantic",
+  setNames: ${JSON.stringify(sets)},
+  themeNames: ${JSON.stringify(themeNames)}
+});
 return result;`;
 
         const task = new ExecuteCodePluginTask({ code });

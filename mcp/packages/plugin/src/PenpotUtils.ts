@@ -130,7 +130,18 @@ type FlutterExportNode = {
     children: FlutterExportNode[];
 };
 
+type DesignSystemMetadata = {
+    name: string;
+    namingConvention: "semantic" | "scale" | "hybrid";
+    scaleType: "4pt" | "8pt" | "60/30/10" | "custom";
+    theme?: string;
+    set?: string;
+    setNames?: string[];
+    themeNames?: string[];
+};
+
 type FlutterExportTree = {
+    designSystem?: DesignSystemMetadata;
     root: FlutterExportNode;
     nodes: FlutterExportNode[];
 };
@@ -185,6 +196,7 @@ const DEFAULT_WIDGET_SPACING_SYSTEM: WidgetSpacingSystem = {
 export class PenpotUtils {
     private static readonly WIDGET_PLUGIN_PREFIX = "mcp.widget";
     private static readonly WIDGET_SEQUENCE_KEY = `${PenpotUtils.WIDGET_PLUGIN_PREFIX}.sequence`;
+    private static readonly DESIGN_SYSTEM_PLUGIN_PREFIX = "mcp.designSystem";
 
     /**
      * Generates an overview structure of the given shape,
@@ -1602,7 +1614,74 @@ export class PenpotUtils {
             nodes.unshift(root);
         }
 
-        return { root, nodes };
+        return { designSystem: this.readDesignSystemMetadata(page), root, nodes };
+    }
+
+    public static setDesignSystemMetadata(metadata: DesignSystemMetadata): DesignSystemMetadata {
+        const page = penpot.currentPage;
+        if (!page) {
+            throw new Error("No current page is active in the plugin context.");
+        }
+
+        const prefix = this.DESIGN_SYSTEM_PLUGIN_PREFIX;
+        page.root.setPluginData(`${prefix}.name`, metadata.name);
+        page.root.setPluginData(`${prefix}.namingConvention`, metadata.namingConvention);
+        page.root.setPluginData(`${prefix}.scaleType`, metadata.scaleType);
+
+        if (metadata.theme) {
+            page.root.setPluginData(`${prefix}.theme`, metadata.theme);
+        }
+        if (metadata.set) {
+            page.root.setPluginData(`${prefix}.set`, metadata.set);
+        }
+        if (metadata.setNames) {
+            page.root.setPluginData(`${prefix}.setNames`, JSON.stringify(metadata.setNames));
+        }
+        if (metadata.themeNames) {
+            page.root.setPluginData(`${prefix}.themeNames`, JSON.stringify(metadata.themeNames));
+        }
+
+        return this.readDesignSystemMetadata(page) as DesignSystemMetadata;
+    }
+
+    public static readDesignSystemMetadata(page?: Page | null): DesignSystemMetadata | undefined {
+        const currentPage = page ?? penpot.currentPage;
+        if (!currentPage) {
+            return undefined;
+        }
+
+        const prefix = this.DESIGN_SYSTEM_PLUGIN_PREFIX;
+        const parseJson = <T>(raw: string): T | undefined => {
+            try {
+                return JSON.parse(raw) as T;
+            } catch (_error) {
+                return undefined;
+            }
+        };
+
+        const name = currentPage.root.getPluginData(`${prefix}.name`);
+        const namingConvention = currentPage.root.getPluginData(`${prefix}.namingConvention`) as DesignSystemMetadata["namingConvention"] | "";
+        const scaleType = currentPage.root.getPluginData(`${prefix}.scaleType`) as DesignSystemMetadata["scaleType"] | "";
+
+        if (!name || !namingConvention || !scaleType) {
+            return undefined;
+        }
+
+        return {
+            name,
+            namingConvention,
+            scaleType,
+            theme: currentPage.root.getPluginData(`${prefix}.theme`) || undefined,
+            set: currentPage.root.getPluginData(`${prefix}.set`) || undefined,
+            setNames: (() => {
+                const raw = currentPage.root.getPluginData(`${prefix}.setNames`);
+                return raw ? parseJson<string[]>(raw) : undefined;
+            })(),
+            themeNames: (() => {
+                const raw = currentPage.root.getPluginData(`${prefix}.themeNames`);
+                return raw ? parseJson<string[]>(raw) : undefined;
+            })(),
+        };
     }
 
     private static instantiateWidgetNode(

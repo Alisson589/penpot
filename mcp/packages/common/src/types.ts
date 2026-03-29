@@ -210,7 +210,18 @@ export interface FlutterExportNode {
     children: FlutterExportNode[];
 }
 
+export interface DesignSystemMetadata {
+    name: string;
+    namingConvention: "semantic" | "scale" | "hybrid";
+    scaleType: "4pt" | "8pt" | "60/30/10" | "custom";
+    theme?: string;
+    set?: string;
+    setNames?: string[];
+    themeNames?: string[];
+}
+
 export interface FlutterExportTree {
+    designSystem?: DesignSystemMetadata;
     root: FlutterExportNode;
     nodes: FlutterExportNode[];
 }
