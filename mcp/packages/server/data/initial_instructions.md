@@ -399,6 +399,7 @@ Properties are often addressed positionally: `pos` parameter in various methods 
   All components end up inside a single new container on the canvas.
   The container's `Variants` instance is initialised with one property `Property 1`, with the property values set to the respective component's name.
 - After creation, edit properties using `variants.renameProperty(pos, name)`, `variants.addProperty()`, and `comp.setVariantProperty(pos, value)`.
+- Prefer variant creation from existing local library components instead of trying to annotate plain boards manually as variants.
 
 **Adding a variant to an existing group**:
 Use `variantContainer.appendChild(mainInstance)` to move a component's main instance into the container, then set its position manually and assign property values via `setVariantProperty`.
@@ -414,6 +415,7 @@ Design tokens are reusable design values (colors, dimensions, typography, etc.) 
 Important:
 * The real source of truth for tokens/themes/sets is the token catalog in the file library, not a canvas page.
 * Use `_Tokens` only as optional documentation/reference if the team wants a visible page. Do not treat that page as the authoritative token store.
+* If you need to create or manage tokens/themes/sets, operate on the token catalog first, then optionally document the result on canvas.
 
 The token library: `penpot.library.local.tokens` (type: `TokenCatalog`)
   * `sets: TokenSet[]` - Token collections (order matters for precedence)

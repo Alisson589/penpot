@@ -1150,6 +1150,241 @@ export class PenpotUtils {
         };
     }
 
+    public static ensureDesignTokenStructure(params: {
+        setName?: string;
+        themeGroup?: string;
+        themeName?: string;
+        attachSetToTheme?: boolean;
+        activateSet?: boolean;
+        activateTheme?: boolean;
+    }): {
+        set?: { id: string; name: string; active: boolean } | null;
+        theme?: { id: string; group: string; name: string; active: boolean; activeSetIds: string[] } | null;
+    } {
+        // @ts-ignore
+        const tokenCatalog = penpot.library.local.tokens;
+
+        let set = params.setName
+            ? tokenCatalog.sets.find((entry: any) => entry.name === params.setName) ?? tokenCatalog.addSet({ name: params.setName })
+            : null;
+
+        let theme =
+            params.themeName || params.themeGroup
+                ? tokenCatalog.themes.find(
+                      (entry: any) =>
+                          (params.themeName ? entry.name === params.themeName : true) &&
+                          (params.themeGroup ? entry.group === params.themeGroup : true)
+                  ) ??
+                  tokenCatalog.addTheme({
+                      group: params.themeGroup ?? "",
+                      name: params.themeName ?? "Default",
+                  })
+                : null;
+
+        if (set && params.activateSet && !set.active) {
+            set.toggleActive();
+        }
+
+        if (set && theme && params.attachSetToTheme !== false && !theme.activeSets.some((entry: any) => entry.id === set.id)) {
+            theme.addSet(set);
+        }
+
+        if (theme && params.activateTheme && !theme.active) {
+            theme.toggleActive();
+        }
+
+        return {
+            set: set
+                ? {
+                      id: set.id,
+                      name: set.name,
+                      active: set.active,
+                  }
+                : null,
+            theme: theme
+                ? {
+                      id: theme.id,
+                      group: theme.group,
+                      name: theme.name,
+                      active: theme.active,
+                      activeSetIds: theme.activeSets.map((entry: any) => entry.id),
+                  }
+                : null,
+        };
+    }
+
+    public static upsertDesignToken(params: {
+        setName: string;
+        type:
+            | "color"
+            | "dimension"
+            | "spacing"
+            | "typography"
+            | "shadow"
+            | "opacity"
+            | "borderRadius"
+            | "borderWidth"
+            | "fontWeights"
+            | "fontSizes"
+            | "fontFamilies"
+            | "letterSpacing"
+            | "textDecoration"
+            | "textCase";
+        name: string;
+        value: unknown;
+        description?: string;
+        activateSet?: boolean;
+    }): {
+        set: { id: string; name: string; active: boolean };
+        token: {
+            id: string;
+            name: string;
+            type: string;
+            value: unknown;
+            resolvedValue: unknown;
+            created: boolean;
+        };
+    } {
+        // @ts-ignore
+        const tokenCatalog = penpot.library.local.tokens;
+        const set =
+            tokenCatalog.sets.find((entry: any) => entry.name === params.setName) ??
+            tokenCatalog.addSet({ name: params.setName });
+
+        if (params.activateSet && !set.active) {
+            set.toggleActive();
+        }
+
+        let token = set.tokens.find((entry: any) => entry.name === params.name);
+        const created = !token;
+        if (!token) {
+            token = set.addToken({
+                type: params.type,
+                name: params.name,
+                // @ts-ignore token values are unioned in Penpot; we accept MCP-level JSON and pass through
+                value: params.value,
+            });
+        } else {
+            token.value = params.value;
+        }
+
+        if (typeof params.description === "string") {
+            token.description = params.description;
+        }
+
+        return {
+            set: {
+                id: set.id,
+                name: set.name,
+                active: set.active,
+            },
+            token: {
+                id: token.id,
+                name: token.name,
+                type: token.type,
+                value: token.value,
+                resolvedValue: token.resolvedValue,
+                created,
+            },
+        };
+    }
+
+    public static createVariantGroupFromComponents(params: {
+        componentIds: string[];
+        propertyName?: string;
+        variantValues?: string[];
+        containerName?: string;
+        pageId?: string;
+        x?: number;
+        y?: number;
+    }): {
+        variantContainer: {
+            id: string;
+            name: string;
+            pageId: string | null;
+            pageName: string | null;
+        };
+        propertyNames: string[];
+        components: Array<{
+            id: string;
+            name: string;
+            path: string;
+            variantProps: Record<string, string>;
+            variantError: string | null;
+        }>;
+    } {
+        const page = params.pageId ? this.getPageById(params.pageId) : penpot.currentPage;
+        if (!page) {
+            throw new Error("No active page available for variant creation");
+        }
+
+        penpot.openPage(page);
+
+        const localComponents = penpot.library.local.components;
+        const components = params.componentIds.map((componentId) => {
+            const component = localComponents.find((entry: any) => entry.id === componentId);
+            if (!component) {
+                throw new Error(`Local component not found: ${componentId}`);
+            }
+            return component;
+        });
+
+        const mainInstances = components.map((component: any) => {
+            const shape = component.mainInstance();
+            if (!shape || shape.type !== "board") {
+                throw new Error(`Component main instance is not a board: ${component.name}`);
+            }
+            return shape as Board;
+        });
+
+        const variantContainer = (penpot as any).createVariantFromComponents(mainInstances as any);
+        if (params.containerName) {
+            variantContainer.name = params.containerName;
+        }
+        if (typeof params.x === "number") {
+            variantContainer.x = params.x;
+        }
+        if (typeof params.y === "number") {
+            variantContainer.y = params.y;
+        }
+
+        const variants = variantContainer.variants;
+        if (!variants) {
+            throw new Error("Variant container created without variants metadata");
+        }
+
+        if (params.propertyName) {
+            variants.renameProperty(0, params.propertyName);
+        }
+
+        const variantComponents = variants.variantComponents();
+        if (params.variantValues && params.variantValues.length > 0) {
+            for (const [index, component] of variantComponents.entries()) {
+                const value = params.variantValues[index];
+                if (value) {
+                    (component as any).setVariantProperty(0, value);
+                }
+            }
+        }
+
+        return {
+            variantContainer: {
+                id: variantContainer.id,
+                name: variantContainer.name,
+                pageId: this.getPageForShape(variantContainer)?.id ?? null,
+                pageName: this.getPageForShape(variantContainer)?.name ?? null,
+            },
+            propertyNames: [...variants.properties],
+            components: variantComponents.map((component: any) => ({
+                id: component.id,
+                name: component.name,
+                path: component.path,
+                variantProps: component.variantProps,
+                variantError: component.variantError || null,
+            })),
+        };
+    }
+
     public static createWidgetTree(rootNode: WidgetNode, pageId?: string): WidgetTreeResult {
         const page = pageId ? this.getPageById(pageId) : penpot.currentPage;
         if (!page) {
@@ -1313,34 +1548,45 @@ export class PenpotUtils {
 
     private static applySafeFontWeight(text: Text, requestedWeight: string | number): void {
         const normalizedRequestedWeight = this.normalizeFontWeightAlias(requestedWeight);
-        const fontFamily = text.fontFamily;
-        if (!fontFamily) {
-            text.fontWeight = normalizedRequestedWeight;
-            return;
-        }
-
-        const font = penpot.fonts.findByName(fontFamily);
+        const font = this.getFontForText(text);
         if (!font) {
-            text.fontWeight = normalizedRequestedWeight;
             return;
         }
 
         const preferredStyle = text.fontStyle ?? "normal";
         const exactVariant =
             font.variants.find(
-                (variant) =>
+                (variant: any) =>
                     this.normalizeFontWeightAlias(variant.fontWeight) === normalizedRequestedWeight &&
                     variant.fontStyle === preferredStyle
             ) ??
-            font.variants.find((variant) => this.normalizeFontWeightAlias(variant.fontWeight) === normalizedRequestedWeight) ??
+            font.variants.find((variant: any) => this.normalizeFontWeightAlias(variant.fontWeight) === normalizedRequestedWeight) ??
             this.findClosestFontVariant(font.variants, normalizedRequestedWeight, preferredStyle);
 
         if (exactVariant) {
             font.applyToText(text, exactVariant);
             return;
         }
+    }
 
-        text.fontWeight = normalizedRequestedWeight;
+    private static getFontForText(text: Text): any | null {
+        const fontId = (text as any).fontId;
+        if (typeof fontId === "string" && fontId) {
+            const byId = penpot.fonts.findById(fontId);
+            if (byId) {
+                return byId;
+            }
+        }
+
+        const fontFamily = text.fontFamily;
+        if (fontFamily) {
+            const byName = penpot.fonts.findByName(fontFamily);
+            if (byName) {
+                return byName;
+            }
+        }
+
+        return null;
     }
 
     private static findClosestFontVariant(

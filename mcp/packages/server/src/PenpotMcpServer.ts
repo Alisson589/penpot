@@ -21,8 +21,11 @@ import { InstantiateLibraryComponentIntoSlotTool } from "./tools/InstantiateLibr
 import { PluginConnectionStatusTool } from "./tools/PluginConnectionStatusTool";
 import { InspectCanvasTool } from "./tools/InspectCanvasTool";
 import { InspectDesignTokensTool } from "./tools/InspectDesignTokensTool";
+import { EnsureDesignTokenStructureTool } from "./tools/EnsureDesignTokenStructureTool";
+import { UpsertDesignTokenTool } from "./tools/UpsertDesignTokenTool";
 import { EnsurePageStructureTool } from "./tools/EnsurePageStructureTool";
 import { CreateMainComponentFromShapeTool } from "./tools/CreateMainComponentFromShapeTool";
+import { CreateVariantGroupFromComponentsTool } from "./tools/CreateVariantGroupFromComponentsTool";
 
 /**
  * Session context for request-scoped data.
@@ -157,8 +160,11 @@ export class PenpotMcpServer {
             new PluginConnectionStatusTool(this),
             new InspectCanvasTool(this),
             new InspectDesignTokensTool(this),
+            new EnsureDesignTokenStructureTool(this),
+            new UpsertDesignTokenTool(this),
             new EnsurePageStructureTool(this),
             new CreateMainComponentFromShapeTool(this),
+            new CreateVariantGroupFromComponentsTool(this),
             new ExecuteCodeTool(this),
             new FindLibraryComponentsTool(this),
             new InstantiateLibraryComponentTool(this),
