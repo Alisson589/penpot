@@ -1,5 +1,14 @@
 import 'package:flutter/material.dart';
 
+void main() {
+  runApp(
+    const MaterialApp(
+      debugShowCheckedModeBanner: false,
+      home: PenpotTokenDemo(),
+    ),
+  );
+}
+
 class AppTokens {
   const AppTokens._();
 
@@ -18,6 +27,24 @@ class AppTokens {
 
 class PenpotTokenDemo extends StatelessWidget {
   const PenpotTokenDemo({super.key});
+
+  Widget _buildSectionTitle(
+    String text, {
+    double fontSize = 24,
+    String fontFamily = AppTokens.fontFamilyBase,
+    FontWeight fontWeight = AppTokens.fontWeightBold,
+    Color color = AppTokens.colorTextPrimary,
+  }) {
+    return Text(
+      text,
+      style: TextStyle(
+        fontSize: fontSize,
+        fontFamily: fontFamily,
+        fontWeight: fontWeight,
+        color: color,
+      ),
+    );
+  }
 
   Widget _buildVariantCard({
     required String title,
@@ -91,64 +118,57 @@ class PenpotTokenDemo extends StatelessWidget {
     );
   }
 
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
         child: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-        Padding(padding: const EdgeInsets.all(24), child: Container(
-          width: 760,
+          padding: const EdgeInsets.all(24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-          Text(
-            'Font Weights',
-            style: const TextStyle(fontSize: 24, fontFamily: 'Work Sans', fontWeight: FontWeight.w700),
-          ),
-          SizedBox(height: 24),
-          Padding(padding: const EdgeInsets.all(16), child: Container(
-            width: 320,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-            _buildFontWeightText('bold', FontWeight.w700),
-            SizedBox(height: 12),
-            _buildFontWeightText('semibold', FontWeight.w600),
-            SizedBox(height: 12),
-            _buildFontWeightText('500', FontWeight.w500),
-            SizedBox(height: 12),
-            _buildFontWeightText('700', FontWeight.w700)
-              ],
-            ),
-          )),
-          SizedBox(height: 24),
-          Text(
-            'State Variants',
-            style: const TextStyle(fontSize: 24, fontFamily: 'Work Sans', fontWeight: FontWeight.w700),
-          ),
-          SizedBox(height: 24),
-          Padding(padding: const EdgeInsets.all(16), child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.start,
-            children: [
-            Padding(padding: const EdgeInsets.all(16), child: _buildVariantCard(title: 'Hover', subtitle: 'Hover state', fontFamily: 'sourcesanspro', titleWeight: FontWeight.w700, titleColor: AppTokens.colorTextPrimary, bodyColor: AppTokens.colorTextMuted, surfaceColor: AppTokens.colorSurface, borderColor: AppTokens.colorBorderSubtle, radius: AppTokens.radiusCard)),
-            SizedBox(width: 24),
-            Padding(padding: const EdgeInsets.all(16), child: _buildVariantCard(title: 'Hover', subtitle: 'Hover state', fontFamily: AppTokens.fontFamilyBase, titleWeight: FontWeight.w700, titleColor: AppTokens.colorTextPrimary, bodyColor: AppTokens.colorTextMuted, titleSize: AppTokens.fontSizeTitle, bodySize: AppTokens.fontSizeBody, surfaceColor: AppTokens.colorSurface, borderColor: AppTokens.colorBorderSubtle, radius: AppTokens.radiusCard)),
-            SizedBox(width: 24),
-            Padding(padding: const EdgeInsets.all(16), child: _buildVariantCard(title: 'Default', subtitle: 'Base state', fontFamily: AppTokens.fontFamilyBase, titleWeight: FontWeight.w500, titleColor: AppTokens.colorTextPrimary, bodyColor: AppTokens.colorTextMuted, titleSize: AppTokens.fontSizeTitle, bodySize: AppTokens.fontSizeBody, surfaceColor: AppTokens.colorSurface, borderColor: AppTokens.colorBorderSubtle, radius: AppTokens.radiusCard))
+              _buildSectionTitle('Font Weights'),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 320),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildFontWeightText('bold', FontWeight.w700),
+                    SizedBox(height: 12),
+                    _buildFontWeightText('semibold', FontWeight.w600),
+                    SizedBox(height: 12),
+                    _buildFontWeightText('500', FontWeight.w500),
+                    SizedBox(height: 12),
+                    _buildFontWeightText('700', FontWeight.w700),
+                  ],
+                ),
+              ),
+              _buildSectionTitle('State Variants'),
+              Wrap(
+                spacing: 24,
+                runSpacing: 24,
+                children: [
+                  _buildVariantCard(
+                    title: 'Hover',
+                    subtitle: 'Hover state',
+                    fontFamily: 'sourcesanspro',
+                    titleWeight: FontWeight.w700,
+                  ),
+                  _buildVariantCard(
+                    title: 'Hover',
+                    subtitle: 'Hover state',
+                    titleWeight: FontWeight.w700,
+                  ),
+                  _buildVariantCard(
+                    title: 'Default',
+                    subtitle: 'Base state',
+                    titleWeight: FontWeight.w500,
+                  ),
+                ],
+              ),
             ],
-          ))
-            ],
           ),
-        ))
-          ],
         ),
-      ),
       ),
     );
   }

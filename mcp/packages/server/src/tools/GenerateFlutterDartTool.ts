@@ -82,12 +82,14 @@ export class GenerateFlutterDartArgs {
         pageId: z.string().optional().describe("Optional page id to export. Defaults to the current page."),
         className: z.string().optional().describe("Flutter widget class name. Defaults to PenpotGeneratedScreen."),
         outputPath: z.string().optional().describe("Optional output path for the generated Dart file."),
+        mode: z.enum(["app", "dartpad"]).optional().describe("Output mode. Use dartpad to emit a runnable main() wrapper."),
     };
 
     shapeId?: string;
     pageId?: string;
     className?: string;
     outputPath?: string;
+    mode?: "app" | "dartpad";
 }
 
 export class GenerateFlutterDartTool extends Tool<GenerateFlutterDartArgs> {
@@ -124,7 +126,7 @@ export class GenerateFlutterDartTool extends Tool<GenerateFlutterDartArgs> {
         }
 
         const className = this.normalizeClassName(args.className || tree.root.displayName || "PenpotGeneratedScreen");
-        const dart = this.renderDartFile(className, tree, tokenCatalog);
+        const dart = this.renderDartFile(className, tree, tokenCatalog, args.mode ?? "app");
         const outputPath = args.outputPath || path.join(process.cwd(), "export", `${this.toSnakeCase(className)}.dart`);
         await fs.mkdir(path.dirname(outputPath), { recursive: true });
         await fs.writeFile(outputPath, dart, "utf8");
@@ -154,21 +156,33 @@ export class GenerateFlutterDartTool extends Tool<GenerateFlutterDartArgs> {
         return cleaned || "PenpotGeneratedScreen";
     }
 
-    private renderDartFile(className: string, tree: FlutterExportTree, tokenCatalog?: InspectedTokenCatalog): string {
-        const usesVariantCardHelper = this.treeUsesVariantCard(tree.root);
-        const usesFontWeightHelper = this.treeUsesFontWeightItem(tree.root);
-        const tokenMap = this.buildTokenValueMap(tokenCatalog, tree.root);
+    private renderDartFile(
+        className: string,
+        tree: FlutterExportTree,
+        tokenCatalog: InspectedTokenCatalog | undefined,
+        mode: "app" | "dartpad"
+    ): string {
+        const normalizedRoot = this.normalizeTree(tree.root);
+        const usesVariantCardHelper = this.treeUsesVariantCard(normalizedRoot);
+        const usesFontWeightHelper = this.treeUsesFontWeightItem(normalizedRoot);
+        const usesSectionTitleHelper = this.treeUsesSectionTitle(normalizedRoot);
+        const tokenMap = this.buildTokenValueMap(tokenCatalog, normalizedRoot);
         const appTokensClass = tokenMap.size > 0 ? this.renderAppTokensClass(tokenMap) : "";
         const helpers = [
+            usesSectionTitleHelper ? this.renderSectionTitleHelper() : "",
             usesVariantCardHelper ? this.renderVariantCardHelper() : "",
             usesFontWeightHelper ? this.renderFontWeightHelper() : "",
         ]
             .filter(Boolean)
             .join("\n\n");
-        const body = this.renderNode(tree.root, 3, true);
-        return `import 'package:flutter/material.dart';
+        const body = this.indentBlock(this.renderNode(normalizedRoot, 0, true), 4);
+        const mainWrapper =
+            mode === "dartpad"
+                ? `void main() {\n  runApp(const MaterialApp(\n    debugShowCheckedModeBanner: false,\n    home: ${className}(),\n  ));\n}\n\n`
+                : "";
+        const dart = `import 'package:flutter/material.dart';
 
-${appTokensClass ? `${appTokensClass}\n\n` : ""}class ${className} extends StatelessWidget {
+${mainWrapper}${appTokensClass ? `${appTokensClass}\n\n` : ""}class ${className} extends StatelessWidget {
   const ${className}({super.key});
 
 ${helpers ? `${helpers}\n` : ""}
@@ -177,17 +191,92 @@ ${helpers ? `${helpers}\n` : ""}
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
-        child: ${body},
+        child:
+${body},
       ),
     );
   }
 }
 `;
+        return this.tidyGeneratedDart(dart);
+    }
+
+    private normalizeTree(node: FlutterExportNode): FlutterExportNode {
+        const children = node.children
+            .map((child) => this.normalizeTree(child))
+            .filter((child) => !this.isIgnorableNode(child));
+
+        const normalized: FlutterExportNode = {
+            ...node,
+            children,
+        };
+
+        if (this.shouldCollapseContainer(normalized)) {
+            const [onlyChild] = normalized.children;
+            return {
+                ...onlyChild,
+                spacingIntent: this.mergeSpacingIntent(normalized.spacingIntent, onlyChild.spacingIntent),
+                parentWidgetId: normalized.parentWidgetId,
+            };
+        }
+
+        return normalized;
+    }
+
+    private isIgnorableNode(node: FlutterExportNode): boolean {
+        if (node.sourceComponentName || node.sourceComponentPath) {
+            return false;
+        }
+        if (node.widgetType === "text") {
+            return false;
+        }
+        if (node.children.length > 0) {
+            return false;
+        }
+        const hasProps = Object.keys(node.props ?? {}).length > 0;
+        const hasTokens = Object.keys(node.tokens ?? {}).length > 0;
+        return !hasProps && !hasTokens;
+    }
+
+    private shouldCollapseContainer(node: FlutterExportNode): boolean {
+        if (node.children.length !== 1) {
+            return false;
+        }
+        if (node.sourceComponentName || node.sourceComponentPath) {
+            return false;
+        }
+        if (node.widgetType === "text") {
+            return false;
+        }
+        if (this.isVariantCard(node) || this.isFontWeightItem(node) || this.isSectionTitle(node)) {
+            return false;
+        }
+
+        const hasDecorationTokens =
+            !!this.resolveTokenRef(node, ["fill", "background", "surface", "color"]) ||
+            !!this.resolveTokenRef(node, ["radius", "borderRadius"]) ||
+            !!this.resolveTokenRef(node, ["borderColor", "stroke", "border"]);
+        const hasConcreteSize =
+            typeof node.layoutIntent?.width === "number" || typeof node.layoutIntent?.height === "number";
+        return !hasDecorationTokens && !hasConcreteSize;
+    }
+
+    private mergeSpacingIntent(
+        outer?: FlutterExportSpacingIntent,
+        inner?: FlutterExportSpacingIntent
+    ): FlutterExportSpacingIntent | undefined {
+        if (!outer) return inner;
+        if (!inner) return outer;
+        return {
+            gap: inner.gap ?? outer.gap,
+            padding: inner.padding ?? outer.padding,
+            margin: inner.margin ?? outer.margin,
+        };
     }
 
     private renderNode(node: FlutterExportNode, indent: number, isRoot = false): string {
         if (node.widgetType === "page" || isRoot) {
-            return this.wrapSpacing(node, this.renderColumn(node.children, indent));
+            return this.renderColumn(node.children, indent);
         }
 
         if (this.isSectionTitle(node)) {
@@ -212,6 +301,9 @@ ${helpers ? `${helpers}\n` : ""}
 
         const layoutKind = node.layoutIntent?.kind;
         if (layoutKind === "row") {
+            if (this.shouldUseWrap(node)) {
+                return this.wrapSpacing(node, this.renderWrap(node, indent));
+            }
             return this.wrapSpacing(node, this.renderRow(node, indent));
         }
         if (layoutKind === "column") {
@@ -259,14 +351,26 @@ ${helpers ? `${helpers}\n` : ""}
         }
         const i = "  ".repeat(indent);
         const rendered = this.renderChildren(node.children, indent + 1, "column", node.spacingIntent?.gap);
-        const width = typeof node.layoutIntent?.width === "number" ? `width: ${node.layoutIntent.width},\n${i}  ` : "";
+        const explicitWidth =
+            typeof node.layoutIntent?.width === "number" && this.shouldRenderExplicitWidth(node)
+                ? node.layoutIntent.width
+                : null;
         const height = typeof node.layoutIntent?.height === "number" ? `height: ${node.layoutIntent.height},\n${i}  ` : "";
         const decoration = decorated ? this.renderContainerDecoration(node, i) : "";
         const childBody =
             node.children.length > 0
                 ? `Column(\n${i}    crossAxisAlignment: CrossAxisAlignment.start,\n${i}    children: [\n${rendered}\n${i}    ],\n${i}  )`
                 : "const SizedBox.shrink()";
-        return `Container(\n${i}  ${width}${height}${decoration}child: ${childBody},\n${i})`;
+        const widthBlock =
+            explicitWidth !== null && !this.shouldUseMaxWidthConstraint(node) ? `width: ${explicitWidth},\n${i}  ` : "";
+        const shouldUseContainer = Boolean(widthBlock || height || decoration);
+        const container = shouldUseContainer
+            ? `Container(\n${i}  ${widthBlock}${height}${decoration}child: ${childBody},\n${i})`
+            : childBody;
+        if (explicitWidth !== null && this.shouldUseMaxWidthConstraint(node)) {
+            return `ConstrainedBox(\n${i}  constraints: const BoxConstraints(maxWidth: ${explicitWidth}),\n${i}  child: ${container},\n${i})`;
+        }
+        return container;
     }
 
     private renderText(node: FlutterExportNode, indent: number): string {
@@ -293,9 +397,19 @@ ${helpers ? `${helpers}\n` : ""}
     }
 
     private renderSectionTitle(node: FlutterExportNode, indent: number): string {
-        const i = "  ".repeat(indent);
         const text = this.escapeDartString(String(node.props?.text ?? node.displayName));
-        return `Text(\n${i}  '${text}',\n${i}  style: const TextStyle(fontSize: 24, fontFamily: 'Work Sans', fontWeight: FontWeight.w700),\n${i})`;
+        const fontSizeToken = this.resolveTokenRef(node, ["fontSize", "fontSizes", "typography.size"]) ?? "24";
+        const fontFamilyToken = this.resolveTokenRef(node, ["fontFamily", "fontFamilies", "typography.family"]) ?? "AppTokens.fontFamilyBase";
+        const fontWeightToken = this.resolveTokenRef(node, ["fontWeight", "fontWeights", "typography.weight"]) ?? "AppTokens.fontWeightBold";
+        const colorToken = this.resolveTokenRef(node, ["textColor", "color", "foreground", "content"]) ?? "AppTokens.colorTextPrimary";
+        const args = [`'${text}'`];
+        if (fontSizeToken !== "24") args.push(`fontSize: ${fontSizeToken}`);
+        if (fontFamilyToken !== "AppTokens.fontFamilyBase") args.push(`fontFamily: ${fontFamilyToken}`);
+        if (!["AppTokens.fontWeightBold", "FontWeight.w700"].includes(fontWeightToken)) {
+            args.push(`fontWeight: ${fontWeightToken}`);
+        }
+        if (colorToken !== "AppTokens.colorTextPrimary") args.push(`color: ${colorToken}`);
+        return `_buildSectionTitle(${args.join(", ")})`;
     }
 
     private renderFontWeightItem(node: FlutterExportNode): string {
@@ -321,33 +435,36 @@ ${helpers ? `${helpers}\n` : ""}
         const radiusToken = this.resolveTokenRef(node, ["radius", "borderRadius"]);
 
         const args: string[] = [`title: '${title}'`, `subtitle: '${subtitle}'`];
-        if (titleFamilyToken) {
+        if (titleFamilyToken && titleFamilyToken !== "AppTokens.fontFamilyBase") {
             args.push(`fontFamily: ${titleFamilyToken}`);
-        } else if (typeof titleFamily === "string") {
+        } else if (typeof titleFamily === "string" && titleFamily !== "Work Sans") {
             args.push(`fontFamily: '${this.escapeDartString(titleFamily)}'`);
         }
         if (titleWeight !== undefined) {
-            args.push(`titleWeight: ${this.mapFontWeight(titleWeight as string | number)}`);
+            const mapped = this.mapFontWeight(titleWeight as string | number);
+            if (!["AppTokens.fontWeightBold", "FontWeight.w700"].includes(mapped)) {
+                args.push(`titleWeight: ${mapped}`);
+            }
         }
-        if (titleColorToken) {
+        if (titleColorToken && titleColorToken !== "AppTokens.colorTextPrimary") {
             args.push(`titleColor: ${titleColorToken}`);
         }
-        if (bodyColorToken) {
+        if (bodyColorToken && bodyColorToken !== "AppTokens.colorTextMuted") {
             args.push(`bodyColor: ${bodyColorToken}`);
         }
-        if (titleSizeToken) {
+        if (titleSizeToken && titleSizeToken !== "AppTokens.fontSizeTitle") {
             args.push(`titleSize: ${titleSizeToken}`);
         }
-        if (bodySizeToken) {
+        if (bodySizeToken && bodySizeToken !== "AppTokens.fontSizeBody") {
             args.push(`bodySize: ${bodySizeToken}`);
         }
-        if (surfaceColorToken) {
+        if (surfaceColorToken && surfaceColorToken !== "AppTokens.colorSurface") {
             args.push(`surfaceColor: ${surfaceColorToken}`);
         }
-        if (borderColorToken) {
+        if (borderColorToken && borderColorToken !== "AppTokens.colorBorderSubtle") {
             args.push(`borderColor: ${borderColorToken}`);
         }
-        if (radiusToken) {
+        if (radiusToken && radiusToken !== "AppTokens.radiusCard") {
             args.push(`radius: ${radiusToken}`);
         }
         return `_buildVariantCard(${args.join(", ")})`;
@@ -373,6 +490,9 @@ ${helpers ? `${helpers}\n` : ""}
     private renderContainerDecoration(node: FlutterExportNode, indentPrefix: string): string {
         const fillToken = this.resolveTokenRef(node, ["fill", "background", "surface", "color"]);
         const radiusToken = this.resolveTokenRef(node, ["radius", "borderRadius"]);
+        if (!fillToken && !radiusToken) {
+            return "";
+        }
         const fillColor = fillToken ?? "Colors.white";
         const radius = radiusToken ?? "16";
         return (
@@ -385,7 +505,7 @@ ${helpers ? `${helpers}\n` : ""}
         if (child === "const SizedBox.shrink()") {
             return child;
         }
-        const padding = this.renderEdgeInsets(node.spacingIntent?.padding);
+        const padding = this.shouldIgnorePaddingWrapper(node) ? null : this.renderEdgeInsets(node.spacingIntent?.padding);
         const margin = this.renderEdgeInsets(node.spacingIntent?.margin);
         const wrappers: string[] = [];
         if (padding) wrappers.push(`Padding(padding: ${padding}, child: __CHILD__)`);
@@ -406,16 +526,82 @@ ${helpers ? `${helpers}\n` : ""}
         axis: "row" | "column" | "wrap",
         gap?: number
     ): string {
-        const i = "  ".repeat(indent);
+        const i = "  ".repeat(indent + 1);
         const rendered: string[] = [];
         children.forEach((child, index) => {
             if (index > 0 && typeof gap === "number" && gap > 0 && axis !== "wrap") {
-                const spacer = axis === "row" ? `SizedBox(width: ${gap})` : `SizedBox(height: ${gap})`;
+                const spacer = axis === "row" ? `const SizedBox(width: ${gap})` : `const SizedBox(height: ${gap})`;
                 rendered.push(`${i}${spacer}`);
             }
-            rendered.push(`${i}${this.renderNode(child, indent)}`);
+            rendered.push(this.indentBlock(this.renderNode(child, indent), indent + 1));
         });
         return rendered.join(",\n");
+    }
+
+    private indentBlock(value: string, indent: number): string {
+        const prefix = "  ".repeat(indent);
+        return value
+            .split("\n")
+            .map((line) => (line ? `${prefix}${line}` : line))
+            .join("\n");
+    }
+
+    private shouldUseWrap(node: FlutterExportNode): boolean {
+        const semantic = node.semanticId?.toLowerCase() ?? "";
+        return (
+            semantic.includes("variant-card-row") ||
+            semantic.includes("card-row") ||
+            semantic.includes("cards-row") ||
+            (node.children.length > 1 && node.children.every((child) => this.isVariantCard(child)))
+        );
+    }
+
+    private shouldRenderExplicitWidth(node: FlutterExportNode): boolean {
+        const role = node.role?.toLowerCase() ?? "";
+        const semantic = node.semanticId?.toLowerCase() ?? "";
+        if (role === "screen" || role === "dashboard" || role === "section") {
+            return false;
+        }
+        if (
+            semantic.includes("screen") ||
+            semantic.includes("dashboard") ||
+            semantic.includes("shell") ||
+            semantic.includes("section") ||
+            semantic.includes("row")
+        ) {
+            return false;
+        }
+        return true;
+    }
+
+    private shouldUseMaxWidthConstraint(node: FlutterExportNode): boolean {
+        const semantic = node.semanticId?.toLowerCase() ?? "";
+        const role = node.role?.toLowerCase() ?? "";
+        return (
+            role === "panel" ||
+            role === "card" ||
+            semantic.includes("list") ||
+            semantic.includes("panel") ||
+            semantic.includes("group")
+        );
+    }
+
+    private shouldIgnorePaddingWrapper(node: FlutterExportNode): boolean {
+        if (this.isVariantCard(node)) {
+            return true;
+        }
+
+        const semantic = node.semanticId?.toLowerCase() ?? "";
+        if (
+            semantic.includes("variant-card-row") ||
+            semantic.includes("card-row") ||
+            semantic.includes("font-weight-list") ||
+            semantic.includes("font-weights-list")
+        ) {
+            return true;
+        }
+
+        return false;
     }
 
     private resolveTokenRef(node: FlutterExportNode, keys: string[]): string | null {
@@ -553,6 +739,10 @@ ${helpers ? `${helpers}\n` : ""}
         return this.walkTree(node).some((entry) => this.isFontWeightItem(entry));
     }
 
+    private treeUsesSectionTitle(node: FlutterExportNode): boolean {
+        return this.walkTree(node).some((entry) => this.isSectionTitle(entry));
+    }
+
     private walkTree(node: FlutterExportNode): FlutterExportNode[] {
         return [node, ...node.children.flatMap((child) => this.walkTree(child))];
     }
@@ -611,6 +801,26 @@ ${helpers ? `${helpers}\n` : ""}
             ),
           ],
         ),
+      ),
+    );
+  }`;
+    }
+
+    private renderSectionTitleHelper(): string {
+        return `  Widget _buildSectionTitle(
+    String text, {
+    double fontSize = 24,
+    String fontFamily = AppTokens.fontFamilyBase,
+    FontWeight fontWeight = AppTokens.fontWeightBold,
+    Color color = AppTokens.colorTextPrimary,
+  }) {
+    return Text(
+      text,
+      style: TextStyle(
+        fontSize: fontSize,
+        fontFamily: fontFamily,
+        fontWeight: fontWeight,
+        color: color,
       ),
     );
   }`;
@@ -733,5 +943,15 @@ ${helpers ? `${helpers}\n` : ""}
             }
         }
         return null;
+    }
+
+    private tidyGeneratedDart(source: string): string {
+        return source
+            .replace(/\n{3,}/g, "\n\n")
+            .replace(/child:\n([ \t]*)SingleChildScrollView\(/g, "child: SingleChildScrollView(")
+            .replace(/\n([ \t]*)child: Column\(\n/g, "\n$1child: Column(\n")
+            .replace(/\n([ \t]*)child: Wrap\(\n/g, "\n$1child: Wrap(\n")
+            .trimEnd()
+            .concat("\n");
     }
 }
