@@ -1228,6 +1228,9 @@ export class PenpotUtils {
             | "fontSizes"
             | "fontFamilies"
             | "letterSpacing"
+            | "number"
+            | "rotation"
+            | "sizing"
             | "textDecoration"
             | "textCase";
         name: string;
@@ -1245,6 +1248,59 @@ export class PenpotUtils {
             created: boolean;
         };
     } {
+        const normalizeDesignTokenValue = (type: string, value: unknown): unknown => {
+            if (type === "shadow") {
+                if (typeof value === "string") {
+                    return value;
+                }
+
+                if (!Array.isArray(value)) {
+                    return value;
+                }
+
+                return value.map((entry) => {
+                    if (!entry || typeof entry !== "object") {
+                        return entry;
+                    }
+
+                    const shadow = entry as Record<string, unknown>;
+                    const insetValue = shadow["inset"];
+                    const normalizedInset =
+                        typeof insetValue === "boolean"
+                            ? insetValue
+                            : typeof insetValue === "string"
+                              ? insetValue.trim().toLowerCase() === "true"
+                              : false;
+
+                    return {
+                        "offset-x": String(shadow["offset-x"] ?? shadow["offsetX"] ?? "0"),
+                        "offset-y": String(shadow["offset-y"] ?? shadow["offsetY"] ?? "0"),
+                        blur: String(shadow["blur"] ?? "0"),
+                        spread: String(shadow["spread"] ?? "0"),
+                        color: String(shadow["color"] ?? "#000000"),
+                        inset: normalizedInset,
+                    };
+                });
+            }
+
+            if (type === "typography" && value && typeof value === "object" && !Array.isArray(value)) {
+                const typography = value as Record<string, unknown>;
+                return {
+                    "font-family": typography["font-family"] ?? typography["fontFamilies"] ?? typography["fontFamily"],
+                    "font-size": String(typography["font-size"] ?? typography["fontSizes"] ?? typography["fontSize"] ?? ""),
+                    "font-weight": String(typography["font-weight"] ?? typography["fontWeights"] ?? typography["fontWeight"] ?? ""),
+                    "line-height": String(typography["line-height"] ?? typography["lineHeight"] ?? ""),
+                    "letter-spacing": String(typography["letter-spacing"] ?? typography["letterSpacing"] ?? ""),
+                    "text-case": String(typography["text-case"] ?? typography["textCase"] ?? "none"),
+                    "text-decoration": String(
+                        typography["text-decoration"] ?? typography["textDecoration"] ?? "none"
+                    ),
+                };
+            }
+
+            return value;
+        };
+
         // @ts-ignore
         const tokenCatalog = penpot.library.local.tokens;
         const set =
@@ -1257,15 +1313,16 @@ export class PenpotUtils {
 
         let token = set.tokens.find((entry: any) => entry.name === params.name);
         const created = !token;
+        const normalizedValue = normalizeDesignTokenValue(params.type, params.value);
         if (!token) {
             token = set.addToken({
                 type: params.type,
                 name: params.name,
                 // @ts-ignore token values are unioned in Penpot; we accept MCP-level JSON and pass through
-                value: params.value,
+                value: normalizedValue,
             });
         } else {
-            token.value = params.value;
+            token.value = normalizedValue;
         }
 
         if (typeof params.description === "string") {

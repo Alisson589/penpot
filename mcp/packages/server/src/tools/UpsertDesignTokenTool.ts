@@ -23,6 +23,9 @@ export class UpsertDesignTokenArgs {
                 "fontSizes",
                 "fontFamilies",
                 "letterSpacing",
+                "number",
+                "rotation",
+                "sizing",
                 "textDecoration",
                 "textCase",
             ])

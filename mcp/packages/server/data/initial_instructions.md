@@ -432,6 +432,10 @@ The token library: `penpot.library.local.tokens` (type: `TokenCatalog`)
      - Examples:
        const token = set.addToken({type: "color", name: "color.primary", value: "#0066FF"}); // direct value
        const token2 = set.addToken({type: "color", name: "color.accent", value: "{color.primary}"}); // reference to another token
+  * Temporary MCP limitation:
+     - Do not create `shadow` tokens via MCP tools for now.
+     - The Penpot API exposes the type, but the current plugin/runtime path does not reliably validate shadow-token creation through the MCP bridge.
+     - Prefer direct shape shadows for now; treat tokenized shadows as unsupported until explicitly fixed.
 
 `Token`: union type encompassing various token types, with common properties:
   * `name: string` - Token name (typically structured, e.g. "color.base.white")
