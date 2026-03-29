@@ -432,8 +432,13 @@ export class PenpotUtils {
         return page || null;
     }
 
-    public static getPages(): { id: string; name: string }[] {
-        return penpot.currentFile!.pages.map((page) => ({ id: page.id, name: page.name }));
+    public static getPages(): { id: string; name: string; plainName: string; sequenceId: number | null }[] {
+        return penpot.currentFile!.pages.map((page) => ({
+            id: page.id,
+            name: page.name,
+            plainName: this.getPlainPageName(page.name),
+            sequenceId: this.parsePageSequence(page.name),
+        }));
     }
 
     public static getPageById(id: string): Page | null {
@@ -441,7 +446,8 @@ export class PenpotUtils {
     }
 
     public static getPageByName(name: string): Page | null {
-        return this.findPage((page) => page.name.toLowerCase() === name.toLowerCase());
+        const wanted = this.getPlainPageName(name).toLowerCase();
+        return this.findPage((page) => this.getPlainPageName(page.name).toLowerCase() === wanted);
     }
 
     public static ensurePageStructure(options?: {
@@ -456,13 +462,13 @@ export class PenpotUtils {
     } {
         const wantedPages: string[] = [];
 
-        if (options?.includeTokens !== false) {
+        if (options?.includeTokens === true) {
             wantedPages.push("_Tokens");
         }
-        if (options?.includeComponents !== false) {
+        if (options?.includeComponents === true) {
             wantedPages.push("_Components");
         }
-        if (options?.includeDocumentation !== false) {
+        if (options?.includeDocumentation === true) {
             wantedPages.push("_Documentation");
         }
 
@@ -478,11 +484,15 @@ export class PenpotUtils {
         const ensuredPages = uniquePageNames.map((pageName) => {
             const existing = this.getPageByName(pageName);
             if (existing) {
+                const existingSequence = this.parsePageSequence(existing.name);
+                if (existingSequence === null) {
+                    existing.name = this.ensurePageDisplayName(pageName, this.allocateNextPageSequence());
+                }
                 return { page: existing, created: false };
             }
 
             const page = penpot.createPage();
-            page.name = pageName;
+            page.name = this.ensurePageDisplayName(pageName, this.allocateNextPageSequence());
             return { page, created: true };
         });
 
@@ -546,7 +556,7 @@ export class PenpotUtils {
         const currentPage = options?.pageId ? this.getPageById(options.pageId) : penpot.currentPage;
         const pages = this.getPages();
         const findByName = (predicate: (normalized: string) => boolean) =>
-            penpot.currentFile?.pages.find((entry) => predicate(entry.name.trim().toLowerCase())) ?? null;
+            penpot.currentFile?.pages.find((entry) => predicate(this.getPlainPageName(entry.name).trim().toLowerCase())) ?? null;
         const hasPageName = (value: string) => !!this.getPageByName(value);
         // @ts-ignore
         const tokenCatalog = penpot.library.local.tokens;
@@ -570,7 +580,8 @@ export class PenpotUtils {
                     hasPageName("_Components") ||
                     !!findByName((name) => name === "components" || name === "widgets" || name === "ui kit"),
                 hasDocumentationPage: hasPageName("_Documentation"),
-                hasScreensPages: penpot.currentFile?.pages.some((entry) => entry.name.startsWith("Screens/")) ?? false,
+                hasScreensPages:
+                    penpot.currentFile?.pages.some((entry) => this.getPlainPageName(entry.name).startsWith("Screens/")) ?? false,
                 matchingScreenPage: preferredScreenPage ? { id: preferredScreenPage.id, name: preferredScreenPage.name } : null,
                 matchingComponentPage: preferredComponentPage
                     ? { id: preferredComponentPage.id, name: preferredComponentPage.name }
@@ -635,11 +646,11 @@ export class PenpotUtils {
         const wantsScreens = params.buildTarget === "screen" || params.buildTarget === "both";
         const wantsComponents = params.buildTarget === "widget" || params.buildTarget === "both";
 
-        if (wantsScreens && !setup.structures.hasScreensPages) {
+        if (wantsScreens && !setup.structures.matchingScreenPage) {
             pagesToCreate.push(`Screens/${params.name}`);
             requiresConfirmation.add("pages");
         }
-        if (wantsComponents && !setup.structures.hasComponentsPage) {
+        if (!setup.structures.hasComponentsPage) {
             pagesToCreate.push("_Components");
             requiresConfirmation.add("pages");
         }
@@ -686,9 +697,7 @@ export class PenpotUtils {
             framesToCreate,
             missing: {
                 tokens: !setup.tokenCatalog.hasTokens,
-                pages:
-                    (wantsScreens && !setup.structures.hasScreensPages) ||
-                    (wantsComponents && !setup.structures.hasComponentsPage),
+                pages: (wantsScreens && !setup.structures.matchingScreenPage) || !setup.structures.hasComponentsPage,
             },
             requiresConfirmation: [...requiresConfirmation],
             nextSteps: [
@@ -724,7 +733,7 @@ export class PenpotUtils {
         const pageEnsure = this.ensurePageStructure({
             includeTokens: false,
             includeDocumentation: false,
-            includeComponents: params.buildTarget === "widget" || params.buildTarget === "both",
+            includeComponents: true,
             screens: params.buildTarget === "screen" || params.buildTarget === "both" ? [screenPageName] : [],
         });
 
@@ -883,7 +892,7 @@ export class PenpotUtils {
         mainInstance.name = requestedComponentName;
         const targetPage = this.getPageByName(targetPageName) ?? (() => {
             const page = penpot.createPage();
-            page.name = targetPageName;
+            page.name = this.ensurePageDisplayName(targetPageName, this.allocateNextPageSequence());
             return page;
         })();
         const mainPage = this.getPageForShape(mainInstance);
@@ -2251,7 +2260,7 @@ export class PenpotUtils {
             shapeName?: string;
         }> = [];
 
-        const isScreenPage = page.name.startsWith("Screens/");
+        const isScreenPage = this.getPlainPageName(page.name).startsWith("Screens/");
         if (isScreenPage && componentInstances.length === 0 && rawBoards.length > 6) {
             findings.push({
                 severity: "high",
@@ -2279,7 +2288,7 @@ export class PenpotUtils {
             });
         }
 
-        if (page.name === "_Components") {
+        if (this.getPlainPageName(page.name) === "_Components") {
             const localComponents = penpot.library.local.components as any[];
             const seen = new Map<string, string>();
             for (const component of localComponents) {
@@ -3760,6 +3769,40 @@ export class PenpotUtils {
         const suffix = sequence !== undefined && sequence !== null ? ` [#${sequence} | ${id}]` : ` [${id}]`;
         const plainName = this.getPlainWidgetName(name);
         return plainName.endsWith(suffix) ? plainName : `${plainName}${suffix}`;
+    }
+
+    private static ensurePageDisplayName(name: string, sequence?: number | null): string {
+        const plainName = this.getPlainPageName(name);
+        if (sequence === undefined || sequence === null) {
+            return plainName;
+        }
+        const suffix = ` [#${sequence}]`;
+        return plainName.endsWith(suffix) ? plainName : `${plainName}${suffix}`;
+    }
+
+    private static getPlainPageName(name: string): string {
+        return name.replace(/\s+\[#\d+\]\s*$/g, "").trim();
+    }
+
+    private static parsePageSequence(name: string): number | null {
+        const match = name.match(/\[#(\d+)\]\s*$/);
+        if (!match) {
+            return null;
+        }
+        const numeric = Number(match[1]);
+        return Number.isFinite(numeric) ? numeric : null;
+    }
+
+    private static allocateNextPageSequence(): number {
+        const pages = penpot.currentFile?.pages ?? [];
+        let maxSequence = 0;
+        for (const page of pages) {
+            const sequence = this.parsePageSequence(page.name);
+            if (sequence && sequence > maxSequence) {
+                maxSequence = sequence;
+            }
+        }
+        return maxSequence + 1;
     }
 
     private static getPlainWidgetName(name: string): string {

@@ -43,7 +43,8 @@ export class ExecuteCodeTool extends Tool<ExecuteCodeArgs> {
 
     public getToolDescription(): string {
         return (
-            "Executes JavaScript code in the Penpot plugin context.\n" +
+            "ADVANCED / LAST RESORT. Executes JavaScript code in the Penpot plugin context.\n" +
+            "Do not use this as the default way to build full screens, design systems, or component libraries. Prefer the higher-level MCP tools first.\n" +
             "IMPORTANT: Before using this tool, make sure you have read the 'Penpot High-Level Overview' and know " +
             "which Penpot API functionality is necessary and how to use it.\n" +
             "You have access two main objects: `penpot` (the Penpot API, of type `Penpot`), `penpotUtils`, " +

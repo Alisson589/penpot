@@ -43,6 +43,8 @@ import { ApplyInstanceTextOverridesTool } from "./tools/ApplyInstanceTextOverrid
 import { InspectDesignTokenUsageTool } from "./tools/InspectDesignTokenUsageTool";
 import { InspectUnsafeConstructionPatternsTool } from "./tools/InspectUnsafeConstructionPatternsTool";
 import { DiagnoseExportShapeTool } from "./tools/DiagnoseExportShapeTool";
+import { RecommendedToolFlowTool } from "./tools/RecommendedToolFlowTool";
+import { FirstToolRecommendedFlowTool } from "./tools/FirstToolRecommendedFlowTool";
 
 /**
  * Session context for request-scoped data.
@@ -174,6 +176,8 @@ export class PenpotMcpServer {
 
     private initTools(): ToolInfo[] {
         const toolInstances: Tool<any>[] = [
+            new FirstToolRecommendedFlowTool(this),
+            new RecommendedToolFlowTool(this),
             new PluginConnectionStatusTool(this),
             new InspectProjectSetupTool(this),
             new InspectCanvasTool(this),

@@ -15,7 +15,7 @@ export class ConfirmStructuralSetupArgs {
         name: z.string().min(1).describe("Base screen/widget name."),
         buildTarget: z.enum(["screen", "widget", "both"]).describe("Whether to scaffold screen frames, reusable widgets, or both."),
         devices: z.array(z.enum(["mobile", "tablet", "desktop"])).min(1).describe("Target devices for screen frames."),
-        createPages: z.boolean().optional().describe("Ensure structural pages such as `_Components` and `Screens/*`. Defaults to true."),
+        createPages: z.boolean().optional().describe("Ensure only the required structural pages. `_Components` is treated as required; `_Tokens` and `_Documentation` are optional. Defaults to true."),
         createTokens: z.boolean().optional().describe("Create starter token system if missing. Defaults to false."),
         includeTokensPage: z.boolean().optional().describe("When true, also ensure `_Tokens` page as documentation."),
         systemName: z.string().optional().describe("Design system name for starter token setup."),
@@ -35,7 +35,7 @@ export class ConfirmStructuralSetupTool extends Tool<ConfirmStructuralSetupArgs>
 
     public getToolDescription(): string {
         return (
-            "Runs the confirmed structural setup for a new UI build: creates missing pages, parent frames, and optionally a starter token system. " +
+            "PRIORITY 2. Runs the confirmed structural setup for a new UI build: creates only the required pages, parent frames, and optionally a starter token system. " +
             "This should only be called after explicit user confirmation."
         );
     }
@@ -57,8 +57,8 @@ const result = {};
 if (${createPages}) {
   result.pages = penpotUtils.ensurePageStructure({
     includeTokens: ${Boolean(args.includeTokensPage)},
-    includeComponents: ${args.buildTarget === "widget" || args.buildTarget === "both"},
-    includeDocumentation: true,
+    includeComponents: true,
+    includeDocumentation: false,
     screens: ${args.buildTarget === "screen" || args.buildTarget === "both" ? JSON.stringify([screenPageName]) : "[]"},
   });
   result.frames = penpotUtils.ensureFrameScaffolding({

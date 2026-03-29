@@ -29,8 +29,8 @@ export class InspectProjectSetupTool extends Tool<InspectProjectSetupArgs> {
 
     public getToolDescription(): string {
         return (
-            "Inspects the current Penpot file for build-readiness: pages, token catalog, libraries, current page, and selection. " +
-            "Use this before creating tokens, pages, frames, or screens."
+            "PRIORITY 1. Inspects the current Penpot file for build-readiness: pages, token catalog, libraries, local components, current page, and selection. " +
+            "Use this before creating tokens, pages, frames, components, or screens."
         );
     }
 

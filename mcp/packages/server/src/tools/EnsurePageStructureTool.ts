@@ -8,9 +8,9 @@ import { ExecuteCodePluginTask } from "../tasks/ExecuteCodePluginTask";
 
 export class EnsurePageStructureArgs {
     static schema = {
-        includeTokens: z.boolean().optional().describe("Ensure the `_Tokens` page exists. Defaults to true."),
-        includeComponents: z.boolean().optional().describe("Ensure the `_Components` page exists. Defaults to true."),
-        includeDocumentation: z.boolean().optional().describe("Ensure the `_Documentation` page exists. Defaults to true."),
+        includeTokens: z.boolean().optional().describe("Ensure the `_Tokens` page exists. Defaults to false."),
+        includeComponents: z.boolean().optional().describe("Ensure the `_Components` page exists. Defaults to false; pass true when needed."),
+        includeDocumentation: z.boolean().optional().describe("Ensure the `_Documentation` page exists. Defaults to false."),
         screens: z
             .array(z.string())
             .optional()
@@ -39,8 +39,8 @@ export class EnsurePageStructureTool extends Tool<EnsurePageStructureArgs> {
 
     public getToolDescription(): string {
         return (
-            "Ensures a Penpot file contains the standard structural pages for design-system work, " +
-            "such as `_Tokens`, `_Components`, `_Documentation`, and optional `Screens/*` pages."
+            "Ensures only the explicitly requested structural pages exist in the Penpot file. " +
+            "Use this conservatively; do not create `_Tokens` or `_Documentation` unless the user asked for them or they are truly required."
         );
     }
 

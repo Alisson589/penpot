@@ -35,7 +35,7 @@ export class PlanUiBuildTool extends Tool<PlanUiBuildArgs> {
 
     public getToolDescription(): string {
         return (
-            "Builds a non-mutating UI construction plan for Penpot, including missing tokens/pages, suggested frames, and the actions that require explicit user confirmation."
+            "PRIORITY 2. Builds a non-mutating UI construction plan for Penpot, including missing tokens/pages, suggested frames, and the actions that require explicit user confirmation."
         );
     }
 

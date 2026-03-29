@@ -5,7 +5,8 @@ As a precondition, the user must connect the Penpot design project to the MCP se
 
 When the user asks to create a screen, widget, dashboard, or other UI:
 
-  * First call `plugin_connection_status`.
+  * First call `first_tool_recommended_flow` (or `recommended_tool_flow` if the alias is unavailable).
+  * Then call `plugin_connection_status`.
   * Then call `inspect_project_setup`.
   * Before creating missing pages, frames, or token systems, produce a non-mutating plan with `plan_ui_build`.
   * Structural creation requires explicit user confirmation. After confirmation, use `confirm_structural_setup` and/or `ensure_frame_scaffolding`.
@@ -15,6 +16,41 @@ When the user asks to create a screen, widget, dashboard, or other UI:
   * Build reusable widgets in `_Components` first. Promote them to local components there, then place only instances on screen pages.
   * Do not create separate main components just because the content differs. Use one main component plus instance overrides, or variants when the structure changes.
   * Text inside a component must live inside an inner frame with layout. Do not leave text layers as free absolute children of the component root.
+
+# Tool Priority Ladder
+
+When you need to recover context or choose the next tool, follow this priority order:
+
+  * Priority 1 — preflight and context:
+    - `first_tool_recommended_flow`
+    - `recommended_tool_flow`
+    - `plugin_connection_status`
+    - `inspect_project_setup`
+    - `inspect_canvas`
+  * Priority 2 — planning and confirmed structure:
+    - `plan_ui_build`
+    - `confirm_structural_setup`
+    - `ensure_frame_scaffolding`
+  * Priority 3 — component-first construction:
+    - `find_local_components`
+    - `create_main_component_from_shape`
+    - `instantiate_local_component_into_slot`
+    - `instantiate_library_component_into_slot`
+    - `create_widget_tree` for shells, slots, and glue containers only
+  * Priority 4 — token and instance refinement:
+    - `apply_design_tokens_to_shape`
+    - `apply_instance_text_overrides`
+    - `inspect_design_token_usage`
+  * Priority 5 — export and diagnostics:
+    - `export_to_flutter`
+    - `generate_flutter_dart`
+    - `diagnose_export_shape`
+    - `export_shape`
+  * Priority 6 — advanced escape hatch:
+    - `execute_code`
+
+Use `execute_code` for inspection, cleanup, targeted experiments, and API discovery.
+Do not use `execute_code` as the primary tool for building complete screens, component libraries, or token systems.
 
 # Executing Code
 
