@@ -132,6 +132,7 @@ const DEFAULT_WIDGET_SPACING_SYSTEM: WidgetSpacingSystem = {
 
 export class PenpotUtils {
     private static readonly WIDGET_PLUGIN_PREFIX = "mcp.widget";
+    private static readonly WIDGET_SEQUENCE_KEY = `${PenpotUtils.WIDGET_PLUGIN_PREFIX}.sequence`;
 
     /**
      * Generates an overview structure of the given shape,
@@ -430,6 +431,21 @@ export class PenpotUtils {
         instance.x = params.x ?? (targetParent === page.root ? 120 : 0);
         instance.y = params.y ?? (targetParent === page.root ? 120 : 0);
         (targetParent as any).appendChild(instance);
+
+        this.applyRuntimeIdentityMetadata(
+            instance,
+            {
+                type: "library_component",
+                name: instance.name || match.componentName,
+                semanticId: this.buildLibraryComponentSemanticId(match),
+                sourceLibrary: match.libraryName,
+                sourceComponentId: match.componentId,
+                sourceComponentName: match.componentName,
+                sourceComponentPath: match.componentPath,
+            },
+            page,
+            targetParent === page.root ? null : (targetParent as Board)
+        );
 
         if (targetParent !== page.root && params.childLayout && (targetParent as any).type === "board") {
             this.applyWidgetChildLayout(
@@ -1044,6 +1060,14 @@ export class PenpotUtils {
     }
 
     private static applyWidgetMetadata(shape: Shape, node: WidgetNode, parent: Board | null): void {
+        const page = penpot.currentPage;
+        const sequence = page ? this.allocateNextWidgetSequence(page) : null;
+        shape.name = this.ensureWidgetDisplayName(
+            node.name || this.humanizeType(node.type),
+            node.id || this.slugify(node.name || node.type),
+            sequence
+        );
+
         const metadata: Record<string, string> = {
             [`${this.WIDGET_PLUGIN_PREFIX}.type`]: node.type,
             [`${this.WIDGET_PLUGIN_PREFIX}.version`]: "1",
@@ -1051,6 +1075,9 @@ export class PenpotUtils {
         };
 
         metadata[`${this.WIDGET_PLUGIN_PREFIX}.id`] = node.id || this.slugify(node.name || node.type);
+        if (sequence !== null) {
+            metadata[this.WIDGET_SEQUENCE_KEY] = String(sequence);
+        }
         if (parent) {
             metadata[`${this.WIDGET_PLUGIN_PREFIX}.parentId`] = parent.id;
         }
@@ -1514,6 +1541,58 @@ export class PenpotUtils {
         return `${this.slugify(node.name || node.type)}-${path.join("-")}`;
     }
 
+    private static applyRuntimeIdentityMetadata(
+        shape: Shape,
+        identity: {
+            type: string;
+            name: string;
+            semanticId: string;
+            sourceLibrary?: string;
+            sourceComponentId?: string;
+            sourceComponentName?: string;
+            sourceComponentPath?: string | null;
+        },
+        page: Page,
+        parent: Board | null
+    ): void {
+        const sequence = this.allocateNextWidgetSequence(page);
+        shape.name = this.ensureWidgetDisplayName(identity.name, identity.semanticId, sequence);
+        shape.setPluginData(`${this.WIDGET_PLUGIN_PREFIX}.type`, identity.type);
+        shape.setPluginData(`${this.WIDGET_PLUGIN_PREFIX}.id`, identity.semanticId);
+        shape.setPluginData(`${this.WIDGET_PLUGIN_PREFIX}.name`, identity.name);
+        shape.setPluginData(this.WIDGET_SEQUENCE_KEY, String(sequence));
+        if (parent) {
+            shape.setPluginData(`${this.WIDGET_PLUGIN_PREFIX}.parentId`, parent.id);
+        }
+        if (identity.sourceLibrary) {
+            shape.setPluginData(`${this.WIDGET_PLUGIN_PREFIX}.sourceLibrary`, identity.sourceLibrary);
+        }
+        if (identity.sourceComponentId) {
+            shape.setPluginData(`${this.WIDGET_PLUGIN_PREFIX}.sourceComponentId`, identity.sourceComponentId);
+        }
+        if (identity.sourceComponentName) {
+            shape.setPluginData(`${this.WIDGET_PLUGIN_PREFIX}.sourceComponentName`, identity.sourceComponentName);
+        }
+        if (identity.sourceComponentPath) {
+            shape.setPluginData(`${this.WIDGET_PLUGIN_PREFIX}.sourceComponentPath`, identity.sourceComponentPath);
+        }
+    }
+
+    private static allocateNextWidgetSequence(page: Page): number {
+        const shapes = this.findShapes(() => true, page.root);
+        let maxSequence = 0;
+
+        for (const shape of shapes) {
+            const raw = shape.getPluginData(this.WIDGET_SEQUENCE_KEY);
+            const numeric = Number(raw);
+            if (Number.isFinite(numeric) && numeric > maxSequence) {
+                maxSequence = numeric;
+            }
+        }
+
+        return maxSequence + 1;
+    }
+
     private static rollbackTopLevelWidgetCreation(page: Page, rootChildrenBefore: Set<string>): void {
         for (const shape of this.getPageRootChildren(page)) {
             if (rootChildrenBefore.has(shape.id)) {
@@ -1543,8 +1622,8 @@ export class PenpotUtils {
         return this.ensureWidgetDisplayName(node.name || this.humanizeType(node.type), node.id || this.slugify(node.type));
     }
 
-    private static ensureWidgetDisplayName(name: string, id: string): string {
-        const suffix = ` [${id}]`;
+    private static ensureWidgetDisplayName(name: string, id: string, sequence?: number | null): string {
+        const suffix = sequence !== undefined && sequence !== null ? ` [#${sequence} | ${id}]` : ` [${id}]`;
         return name.endsWith(suffix) ? name : `${name}${suffix}`;
     }
 
@@ -1560,6 +1639,10 @@ export class PenpotUtils {
             .replace(/[^a-z0-9]+/g, "-")
             .replace(/^-+|-+$/g, "")
             .slice(0, 48);
+    }
+
+    private static buildLibraryComponentSemanticId(match: LibraryComponentSummary): string {
+        return this.slugify(`${match.libraryName}-${match.componentPath ?? match.componentName}`);
     }
 
     private static expandBlueprint(node: WidgetNode): WidgetNode {

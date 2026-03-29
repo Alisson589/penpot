@@ -248,10 +248,12 @@ When creating or editing widgets, preserve stable identity so the user can refer
 
   * Every widget created through the MCP should have:
     - a stable widget id
+    - a runtime numeric sequence id
     - a human-readable name
     - a layer name that exposes both the human-readable name and the widget id
-  * Prefer display names in the form `Name [widget-id]`.
+  * Prefer display names in the form `Name [#sequence | widget-id]` when that naming has been validated as safe for the current runtime.
   * Store widget identity in plugin data as well; layer naming is for user visibility, plugin data is for machine reliability.
+  * Generate numeric ids at MCP runtime. Do NOT modify Penpot core naming or persistence rules just to support MCP traceability.
   * When discussing pages with the user or preparing a multi-page edit, always list page ids and page names together.
   * Prefer `inspect_canvas` or `penpotUtils.getPages()` before making assumptions about the active page.
 
