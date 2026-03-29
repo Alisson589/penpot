@@ -1,0 +1,13 @@
+name: pencil_dashboard_demo
+description: Flutter demo generated from the Penpot MCP dashboard smoke.
+publish_to: "none"
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+flutter:
+  uses-material-design: true

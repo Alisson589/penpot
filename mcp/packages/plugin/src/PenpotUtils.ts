@@ -94,10 +94,20 @@ type InstantiateLibraryComponentParams = {
     libraryName?: string;
     componentNameContains?: string;
     componentPathContains?: string;
+    targetShapeId?: string;
     x?: number;
     y?: number;
     pageId?: string;
     detach?: boolean;
+    childLayout?: WidgetChildLayoutSpec;
+};
+
+type DockShapeIntoContainerParams = {
+    shapeId: string;
+    targetShapeId: string;
+    childLayout?: WidgetChildLayoutSpec;
+    fit?: "none" | "contain" | "fill-width" | "fill-height" | "stretch";
+    inset?: number;
 };
 
 export class PenpotUtils {
@@ -273,6 +283,42 @@ export class PenpotUtils {
         return this.findPage((page) => page.name.toLowerCase() === name.toLowerCase());
     }
 
+    private static findShapeInSubtreeById(shape: Shape, id: string): Shape | null {
+        if (shape.id === id) {
+            return shape;
+        }
+
+        if (!("children" in shape) || !shape.children) {
+            return null;
+        }
+
+        for (const child of shape.children) {
+            const match = this.findShapeInSubtreeById(child, id);
+            if (match) {
+                return match;
+            }
+        }
+
+        return null;
+    }
+
+    private static findShapeOnPageById(page: Page, id: string): Shape | null {
+        const directMatch =
+            ((page as any).findShapeById?.(id) as Shape | null | undefined) ??
+            ((page as any).getShapeById?.(id) as Shape | null | undefined);
+
+        if (directMatch) {
+            return directMatch;
+        }
+
+        const root = page.root as Shape | undefined;
+        if (!root) {
+            return null;
+        }
+
+        return this.findShapeInSubtreeById(root, id);
+    }
+
     public static listLibraryComponents(): LibraryComponentSummary[] {
         const libraries = [penpot.library.local, ...penpot.library.connected];
         return libraries.flatMap((library) =>
@@ -347,9 +393,31 @@ export class PenpotUtils {
         }
 
         penpot.openPage(page);
-        instance.x = params.x ?? 120;
-        instance.y = params.y ?? 120;
-        (page.root as any).appendChild(instance);
+        const targetShape = params.targetShapeId ? this.findShapeOnPageById(page, params.targetShapeId) : null;
+        if (params.targetShapeId && !targetShape) {
+            throw new Error(`Target shape not found on current page: ${params.targetShapeId}`);
+        }
+
+        const targetParent = targetShape ?? page.root;
+        if (typeof (targetParent as any).appendChild !== "function") {
+            throw new Error(
+                params.targetShapeId
+                    ? `Target shape cannot contain children: ${params.targetShapeId}`
+                    : "Resolved target parent cannot contain children"
+            );
+        }
+
+        instance.x = params.x ?? (targetParent === page.root ? 120 : 0);
+        instance.y = params.y ?? (targetParent === page.root ? 120 : 0);
+        (targetParent as any).appendChild(instance);
+
+        if (targetParent !== page.root && params.childLayout && (targetParent as any).type === "board") {
+            this.applyWidgetChildLayout(
+                instance,
+                { type: "library_component", childLayout: params.childLayout },
+                targetParent as Board
+            );
+        }
 
         if (params.detach) {
             instance.detach();
@@ -358,8 +426,81 @@ export class PenpotUtils {
         return {
             match,
             instanceId: instance.id,
+            parentId: (instance.parent as any)?.id ?? null,
+            targetShapeId: targetShape?.id ?? null,
             detached: params.detach ?? false,
             isComponentInstance: instance.isComponentInstance(),
+        };
+    }
+
+    public static dockShapeIntoContainer(params: DockShapeIntoContainerParams): object {
+        const shape = this.findShapeById(params.shapeId);
+        if (!shape) {
+            throw new Error(`Shape not found: ${params.shapeId}`);
+        }
+
+        const targetShape = this.findShapeById(params.targetShapeId);
+        if (!targetShape) {
+            throw new Error(`Target shape not found: ${params.targetShapeId}`);
+        }
+
+        if (typeof (targetShape as any).appendChild !== "function") {
+            throw new Error(`Target shape cannot contain children: ${params.targetShapeId}`);
+        }
+
+        (targetShape as any).appendChild(shape);
+
+        const targetBoard = targetShape.type === "board" ? (targetShape as Board) : null;
+        if (targetBoard) {
+            this.applyWidgetChildLayout(
+                shape,
+                { type: "docked_shape", childLayout: params.childLayout ?? { absolute: false } },
+                targetBoard
+            );
+        }
+
+        this.fitShapeWithinContainer(shape, targetShape, params.fit ?? "none", params.inset ?? 0);
+
+        return {
+            shapeId: shape.id,
+            targetShapeId: targetShape.id,
+            parentId: (shape.parent as any)?.id ?? null,
+            fit: params.fit ?? "none",
+        };
+    }
+
+    public static instantiateLibraryComponentIntoSlot(
+        params: InstantiateLibraryComponentParams & {
+            targetShapeId: string;
+            fit?: "none" | "contain" | "fill-width" | "fill-height" | "stretch";
+            inset?: number;
+        }
+    ): object {
+        const instanceResult: any = this.instantiateLibraryComponent({
+            libraryName: params.libraryName,
+            componentNameContains: params.componentNameContains,
+            componentPathContains: params.componentPathContains,
+            pageId: params.pageId,
+            detach: params.detach,
+        });
+
+        const dockResult = this.dockShapeIntoContainer({
+            shapeId: instanceResult.instanceId,
+            targetShapeId: params.targetShapeId,
+            childLayout:
+                params.childLayout ?? {
+                    absolute: false,
+                    horizontalSizing: "fill",
+                    verticalSizing: "fill",
+                    alignSelf: "stretch",
+                },
+            fit: params.fit ?? "contain",
+            inset: params.inset ?? 0,
+        });
+
+        return {
+            ...instanceResult,
+            ...dockResult,
         };
     }
 
@@ -988,6 +1129,59 @@ export class PenpotUtils {
         if ("maxHeight" in childLayout) {
             layoutChild.maxHeight = childLayout.maxHeight ?? null;
         }
+    }
+
+    private static fitShapeWithinContainer(
+        shape: Shape,
+        targetShape: Shape,
+        fit: "none" | "contain" | "fill-width" | "fill-height" | "stretch",
+        inset: number
+    ): void {
+        if (fit === "none") {
+            return;
+        }
+
+        const resize = (shape as any).resize;
+        const shapeBounds = (shape as any).bounds;
+        const targetBounds = (targetShape as any).bounds;
+        if (typeof resize !== "function" || !shapeBounds || !targetBounds) {
+            return;
+        }
+
+        const availableWidth = Math.max(targetBounds.width - inset * 2, 1);
+        const availableHeight = Math.max(targetBounds.height - inset * 2, 1);
+        const currentWidth = Math.max(shapeBounds.width, 1);
+        const currentHeight = Math.max(shapeBounds.height, 1);
+
+        let width = currentWidth;
+        let height = currentHeight;
+
+        switch (fit) {
+            case "stretch":
+                width = availableWidth;
+                height = availableHeight;
+                break;
+            case "fill-width": {
+                const scale = availableWidth / currentWidth;
+                width = availableWidth;
+                height = Math.max(currentHeight * scale, 1);
+                break;
+            }
+            case "fill-height": {
+                const scale = availableHeight / currentHeight;
+                width = Math.max(currentWidth * scale, 1);
+                height = availableHeight;
+                break;
+            }
+            case "contain": {
+                const scale = Math.min(availableWidth / currentWidth, availableHeight / currentHeight);
+                width = Math.max(currentWidth * scale, 1);
+                height = Math.max(currentHeight * scale, 1);
+                break;
+            }
+        }
+
+        resize.call(shape, width, height);
     }
 
     private static resolveChildHorizontalSizing(

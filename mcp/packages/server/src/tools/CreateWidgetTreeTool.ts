@@ -35,6 +35,23 @@ const widgetResponsiveOverrideSchema = z.object({
     slotOrder: z.array(z.string()).optional(),
 });
 
+const widgetChildLayoutSchema = z.object({
+    absolute: z.boolean().optional(),
+    horizontalSizing: z.enum(["fill", "auto", "fix"]).optional(),
+    verticalSizing: z.enum(["fill", "auto", "fix"]).optional(),
+    alignSelf: z.enum(["center", "auto", "start", "end", "stretch"]).optional(),
+    horizontalMargin: z.number().optional(),
+    verticalMargin: z.number().optional(),
+    topMargin: z.number().optional(),
+    rightMargin: z.number().optional(),
+    bottomMargin: z.number().optional(),
+    leftMargin: z.number().optional(),
+    minWidth: z.number().nullable().optional(),
+    maxWidth: z.number().nullable().optional(),
+    minHeight: z.number().nullable().optional(),
+    maxHeight: z.number().nullable().optional(),
+});
+
 const widgetNodeSchema: z.ZodType<any> = z.lazy(() =>
     z.object({
         id: z.string().optional(),
@@ -43,6 +60,7 @@ const widgetNodeSchema: z.ZodType<any> = z.lazy(() =>
         props: z.record(z.string(), z.unknown()).optional(),
         tokens: z.record(z.string(), z.string()).optional(),
         layout: widgetLayoutSchema.optional(),
+        childLayout: widgetChildLayoutSchema.optional(),
         responsive: z
             .object({
                 compact: widgetResponsiveOverrideSchema.optional(),

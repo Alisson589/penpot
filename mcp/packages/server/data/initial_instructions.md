@@ -218,6 +218,60 @@ Common tasks - Quick Reference (ALWAYS use penpotUtils for these):
         if (xMod !== 0) {
           return () => penpotUtils.setParentXY(shape, Math.round(shape.parentX / 4) * 4, shape.parentY);
         }
+
+# Board Discovery And Library Docking
+
+When working with boards, slots, or nested containers, follow these rules strictly:
+
+  * Call `plugin_connection_status` before any mutation if the plugin may have been rebuilt, reloaded, or reconnected.
+  * Call `inspect_canvas` before concluding that a board, slot, or component instance is missing.
+  * NEVER assume a board or slot is missing based only on a shallow lookup or an old cached id.
+  * First inspect the current page tree recursively, for example with `penpotUtils.shapeStructure(penpot.currentPage.root, 4)` or `penpotUtils.findShapes(...)`.
+  * Distinguish clearly between:
+    - a board existing in the current page tree
+    - a stale id from an older session or an earlier version of the page
+    - a plugin session that is connected but attached to a different page context
+  * After rebuilding or reloading the MCP plugin, assume previous MCP sessions may be stale. Re-initialize the MCP session and re-check `penpot.currentFile` / `penpot.currentPage` before mutating the document.
+  * When instantiating a library component into a specific container, always prefer `instantiate_library_component` with `targetShapeId`.
+  * If `targetShapeId` is provided and the target cannot be found, treat that as a hard error and investigate the page tree; do NOT silently fall back to the page root.
+  * After targeted instantiation, verify the result by checking the returned `parentId` and `targetShapeId`.
+
+# Canvas Inventory Protocol
+
+Before claiming that something is missing, deleted, or newly created on the canvas, always inventory the current page explicitly.
+
+Use this protocol:
+
+  * Step 1: Confirm context first.
+    - Prefer `plugin_connection_status` to verify that exactly one plugin instance is connected and ready.
+    - Check `penpot.currentFile` and `penpot.currentPage`.
+    - If the plugin was rebuilt, reloaded, or reconnected, assume older assumptions may be stale.
+
+  * Step 2: List the immediate canvas structure.
+    - Prefer `inspect_canvas` for a direct MCP-level inventory.
+    - Inspect `penpot.currentPage.root.children`.
+    - Record each direct child with at least `id`, `name`, and `type`.
+    - This is the authoritative view for top-level canvas objects.
+
+  * Step 3: List the recursive structure when nested content matters.
+    - Prefer `inspect_canvas` with recursive structure enabled when available.
+    - Use `penpotUtils.shapeStructure(penpot.currentPage.root, depth)` or `penpotUtils.findShapes(...)`.
+    - Include depth information when debugging nested boards, slots, or instances.
+
+  * Step 4: Separate top-level presence from nested presence.
+    - A shape missing from `root.children` may still exist deeper in the tree.
+    - A shape found recursively may still be in the wrong container.
+
+  * Step 5: Verify postconditions after every mutation.
+    - For create/move/dock operations, verify:
+      - the new shape id
+      - the resolved parent id
+      - whether the shape appears at root or inside the intended container
+    - Do not rely on success status alone.
+
+  * Step 6: Treat stale ids as a first-class failure mode.
+    - If an id no longer resolves in the current page tree, do not assume the canvas is empty.
+    - Re-list the page tree and search by name/type before concluding the shape is gone.
       });
       fixes.forEach(f => f.result()); // Apply all fixes
   * Find containment violations:

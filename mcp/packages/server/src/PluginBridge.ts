@@ -12,6 +12,13 @@ interface ClientConnection {
     userToken: string | null;
 }
 
+export interface PluginConnectionStatus {
+    connectedClientCount: number;
+    connectedUserTokens: string[];
+    multiUserMode: boolean;
+    ready: boolean;
+}
+
 /**
  * Manages WebSocket connections to Penpot plugin instances and handles plugin tasks
  * over these connections.
@@ -150,6 +157,15 @@ export class PluginBridge {
         this.logger.info(`Task ${response.id} completed: success=${response.success}`);
     }
 
+    public getConnectionStatus(): PluginConnectionStatus {
+        return {
+            connectedClientCount: this.connectedClients.size,
+            connectedUserTokens: Array.from(this.clientsByToken.keys()),
+            multiUserMode: this.mcpServer.isMultiUserMode(),
+            ready: this.connectedClients.size === 1 || (this.mcpServer.isMultiUserMode() && this.clientsByToken.size > 0),
+        };
+    }
+
     /**
      * Determines the client connection to use for executing a task.
      *
@@ -169,7 +185,7 @@ export class PluginBridge {
             const connection = this.clientsByToken.get(sessionContext.userToken);
             if (!connection) {
                 throw new Error(
-                    `No plugin instance connected for user token. Please ensure the plugin is running and connected with the correct token.`
+                    `No plugin instance connected for user token. Please ensure the plugin is running and connected with the correct token, then call plugin_connection_status to verify readiness.`
                 );
             }
 
@@ -178,13 +194,13 @@ export class PluginBridge {
             // single-user mode: return the single connected client
             if (this.connectedClients.size === 0) {
                 throw new Error(
-                    `No Penpot plugin instances are currently connected. Please ensure the plugin is running and connected.`
+                    `No Penpot plugin instances are currently connected. Please ensure the plugin is running and connected, then call plugin_connection_status to verify readiness.`
                 );
             }
             if (this.connectedClients.size > 1) {
                 throw new Error(
                     `Multiple (${this.connectedClients.size}) Penpot MCP Plugin instances are connected. ` +
-                        `Ask the user to ensure that only one instance is connected at a time.`
+                        `Ask the user to ensure that only one instance is connected at a time, then call plugin_connection_status to confirm.`
                 );
             }
 

@@ -16,6 +16,10 @@ import { ApiDocs } from "./ApiDocs";
 import { CreateWidgetTreeTool } from "./tools/CreateWidgetTreeTool";
 import { FindLibraryComponentsTool } from "./tools/FindLibraryComponentsTool";
 import { InstantiateLibraryComponentTool } from "./tools/InstantiateLibraryComponentTool";
+import { DockShapeIntoContainerTool } from "./tools/DockShapeIntoContainerTool";
+import { InstantiateLibraryComponentIntoSlotTool } from "./tools/InstantiateLibraryComponentIntoSlotTool";
+import { PluginConnectionStatusTool } from "./tools/PluginConnectionStatusTool";
+import { InspectCanvasTool } from "./tools/InspectCanvasTool";
 
 /**
  * Session context for request-scoped data.
@@ -147,9 +151,13 @@ export class PenpotMcpServer {
 
     private initTools(): ToolInfo[] {
         const toolInstances: Tool<any>[] = [
+            new PluginConnectionStatusTool(this),
+            new InspectCanvasTool(this),
             new ExecuteCodeTool(this),
             new FindLibraryComponentsTool(this),
             new InstantiateLibraryComponentTool(this),
+            new DockShapeIntoContainerTool(this),
+            new InstantiateLibraryComponentIntoSlotTool(this),
             new CreateWidgetTreeTool(this),
             new HighLevelOverviewTool(this),
             new PenpotApiInfoTool(this, this.apiDocs),
