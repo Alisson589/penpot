@@ -3,13 +3,19 @@ import 'package:flutter/material.dart';
 class AppTokens {
   const AppTokens._();
 
-  static const double radiusMd = 0;
-  static const FontWeight fontWeightBold = FontWeight.w400;
-  static const FontWeight fontWeightMedium = FontWeight.w400;
-  static const double spacingMd = 0;
-  static const double fontSizeTitle = 0;
-  static const double fontSizeBody = 0;
-  static const double radiusLg = 0;
+  static const double radiusMd = 12;
+  static const FontWeight fontWeightBold = FontWeight.w700;
+  static const Color colorSurface = Color(0xFFFFFFFF);
+  static const Color colorTextPrimary = Color(0xFF111827);
+  static const Color colorTextMuted = Color(0xFF6B7280);
+  static const FontWeight fontWeightMedium = FontWeight.w500;
+  static const double spacingMd = 24;
+  static const double fontSizeTitle = 20;
+  static const double fontSizeBody = 14;
+  static const Color colorBrandPrimary = Color(0xFF2563EB);
+  static const double radiusLg = 16;
+  static const Color colorSurfaceCard = Color(0xFFFFFFFF);
+  static const Color colorSurfaceSidebar = Color(0xFFE5E7EB);
   static const String fontFamilyBase = 'Work Sans';
   static const double fontSizeWeightDemo = 20;
   static const Color colorBorderSubtle = Color(0xFFD1D5DB);
@@ -90,16 +96,16 @@ class PhaseFiveComplexDashboard extends StatelessWidget {
                 runSpacing: 16,
                 children: [
                   _buildVariantCard(title: 'Revenue Dashboard', subtitle: 'Complex smoke for token-first export', fontFamily: 'sourcesanspro', titleWeight: FontWeight.w400),
-                  _buildVariantCard(title: 'Title', subtitle: 'Subtitle', surfaceColor: AppTokens.colorBrandPrimary, borderColor: AppTokens.radiusMd, radius: AppTokens.radiusMd)
+                  _buildVariantCard(title: 'Title', subtitle: 'Subtitle', surfaceColor: AppTokens.colorBrandPrimary, radius: AppTokens.radiusMd)
                 ],
               )),
             Padding(padding: const EdgeInsets.all(16), child: Wrap(
                 spacing: 16,
                 runSpacing: 16,
                 children: [
-                  _buildVariantCard(title: 'Title', subtitle: 'Subtitle', surfaceColor: AppTokens.colorSurfaceCard, borderColor: AppTokens.radiusMd, radius: AppTokens.radiusMd),
-                  _buildVariantCard(title: 'Title', subtitle: 'Subtitle', surfaceColor: AppTokens.colorSurfaceCard, borderColor: AppTokens.radiusMd, radius: AppTokens.radiusMd),
-                  _buildVariantCard(title: 'Title', subtitle: 'Subtitle', surfaceColor: AppTokens.colorSurfaceCard, borderColor: AppTokens.radiusMd, radius: AppTokens.radiusMd)
+                  _buildVariantCard(title: 'Title', subtitle: 'Subtitle', surfaceColor: AppTokens.colorSurfaceCard, radius: AppTokens.radiusMd),
+                  _buildVariantCard(title: 'Title', subtitle: 'Subtitle', surfaceColor: AppTokens.colorSurfaceCard, radius: AppTokens.radiusMd),
+                  _buildVariantCard(title: 'Title', subtitle: 'Subtitle', surfaceColor: AppTokens.colorSurfaceCard, radius: AppTokens.radiusMd)
                 ],
               )),
             Padding(padding: const EdgeInsets.all(16), child: Row(
@@ -114,11 +120,11 @@ class PhaseFiveComplexDashboard extends StatelessWidget {
                                   style: TextStyle(fontSize: AppTokens.fontSizeTitle, fontFamily: 'sourcesanspro', fontWeight: AppTokens.fontWeightMedium),
                                 ),
                           const SizedBox(height: 12),
-                          _buildVariantCard(title: 'Title', subtitle: 'Subtitle', surfaceColor: AppTokens.colorSurfaceSidebar, borderColor: AppTokens.radiusMd, radius: AppTokens.radiusMd)
+                          _buildVariantCard(title: 'Title', subtitle: 'Subtitle', surfaceColor: AppTokens.colorSurfaceSidebar, radius: AppTokens.radiusMd)
                           ],
                         )),
                   const SizedBox(width: 16),
-                  _buildVariantCard(title: 'Highlights', subtitle: 'Tokenized sidebar with semantic colors and spacing.', fontFamily: 'sourcesanspro', titleWeight: FontWeight.w400, surfaceColor: AppTokens.colorSurfaceSidebar, borderColor: AppTokens.radiusMd, radius: AppTokens.radiusMd)
+                  _buildVariantCard(title: 'Highlights', subtitle: 'Tokenized sidebar with semantic colors and spacing.', fontFamily: 'sourcesanspro', titleWeight: FontWeight.w400, surfaceColor: AppTokens.colorSurfaceSidebar, radius: AppTokens.radiusMd)
                 ],
               ))
             ],

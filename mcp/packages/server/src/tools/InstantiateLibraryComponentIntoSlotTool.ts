@@ -28,6 +28,14 @@ export class InstantiateLibraryComponentIntoSlotArgs {
         libraryName: z.string().optional().describe("Optional substring of the library name."),
         componentNameContains: z.string().optional().describe("Optional substring that should appear in the component name."),
         componentPathContains: z.string().optional().describe("Optional substring that should appear in the component path."),
+        matchMode: z
+            .enum(["exact", "prefix", "contains", "fuzzy"])
+            .optional()
+            .describe("How to match the requested component name/path. Use `exact` for icon lookup."),
+        requireExactMatch: z
+            .boolean()
+            .optional()
+            .describe("When true, fail instead of docking a near match such as `bell-off` for `bell`."),
         targetShapeId: z.string().describe("Id of the slot or container that should receive the new component instance."),
         pageId: z.string().optional().describe("Optional Penpot page id where the component instance should be created."),
         detach: z.boolean().optional().describe("Detach the instance immediately after creation if independent editing is required."),
@@ -39,6 +47,8 @@ export class InstantiateLibraryComponentIntoSlotArgs {
     libraryName?: string;
     componentNameContains?: string;
     componentPathContains?: string;
+    matchMode?: "exact" | "prefix" | "contains" | "fuzzy";
+    requireExactMatch?: boolean;
     targetShapeId!: string;
     pageId?: string;
     detach?: boolean;
@@ -59,7 +69,8 @@ export class InstantiateLibraryComponentIntoSlotTool extends Tool<InstantiateLib
     public getToolDescription(): string {
         return (
             "Instantiates a matching library component and immediately docks it into a target slot/container with fit and layout rules. " +
-            "Before using this, call plugin_connection_status to verify readiness and inspect_canvas to confirm the slot/container exists."
+            "Before using this, call plugin_connection_status to verify readiness and inspect_canvas to confirm the slot/container exists. " +
+            "For icons, prefer `matchMode=exact` or `requireExactMatch=true`."
         );
     }
 

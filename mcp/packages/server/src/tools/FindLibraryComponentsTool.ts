@@ -11,12 +11,22 @@ export class FindLibraryComponentsArgs {
         libraryName: z.string().optional().describe("Optional substring of the library name."),
         componentNameContains: z.string().optional().describe("Optional substring that should appear in the component name."),
         componentPathContains: z.string().optional().describe("Optional substring that should appear in the component path."),
+        matchMode: z
+            .enum(["exact", "prefix", "contains", "fuzzy"])
+            .optional()
+            .describe("How to match the name/path query. Defaults to `contains`; use `exact` for icon lookup."),
+        requireExactMatch: z
+            .boolean()
+            .optional()
+            .describe("When true, return only exact matches. Useful for icon libraries to avoid wrong variants."),
         limit: z.number().int().positive().max(100).optional().describe("Maximum number of matches to return."),
     };
 
     libraryName?: string;
     componentNameContains?: string;
     componentPathContains?: string;
+    matchMode?: "exact" | "prefix" | "contains" | "fuzzy";
+    requireExactMatch?: boolean;
     limit?: number;
 }
 
@@ -42,6 +52,8 @@ export class FindLibraryComponentsTool extends Tool<FindLibraryComponentsArgs> {
                 libraryName: args.libraryName,
                 componentNameContains: args.componentNameContains,
                 componentPathContains: args.componentPathContains,
+                matchMode: args.matchMode,
+                requireExactMatch: args.requireExactMatch,
                 limit: args.limit,
             })});`;
 

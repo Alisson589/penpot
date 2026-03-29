@@ -49,6 +49,13 @@ export class ExportShapeArgs {
  * Tool for executing JavaScript code in the Penpot plugin context
  */
 export class ExportShapeTool extends Tool<ExportShapeArgs> {
+    private static readonly FALLBACK_TYPE_PRIORITY: Record<string, number> = {
+        board: 0,
+        frame: 1,
+        group: 2,
+        shape: 3,
+    };
+
     /**
      * Creates a new ExecuteCode tool instance.
      *
@@ -96,10 +103,43 @@ export class ExportShapeTool extends Tool<ExportShapeArgs> {
         const asSvg = args.format === "svg";
         const code = `return penpotUtils.exportImage(${shapeCode}, "${args.mode}", ${asSvg});`;
 
-        // execute the code and obtain the image data
-        const task = new ExecuteCodePluginTask({ code: code });
-        const result = await this.mcpServer.pluginBridge.executePluginTask(task);
-        const imageData = result.data!.result;
+        let imageData: Uint8Array | object;
+        let fallbackNote: string | null = null;
+        try {
+            const task = new ExecuteCodePluginTask({ code });
+            const result = await this.mcpServer.pluginBridge.executePluginTask(task);
+            imageData = result.data!.result;
+        } catch (error: any) {
+            const diagnosis = await this.tryDiagnoseExport(args.shapeId);
+            const fallbackCandidates = this.selectFallbackCandidates(args.shapeId, diagnosis?.result?.exportCandidates ?? []);
+            if (fallbackCandidates.length === 0) {
+                throw error;
+            }
+
+            let fallbackError = error;
+            let successfulCandidate: { id: string; name: string; type: string; descendantCount: number } | null = null;
+            for (const fallbackCandidate of fallbackCandidates) {
+                try {
+                    const fallbackCode = `return penpotUtils.exportImage(penpotUtils.findShapeById("${fallbackCandidate.id}"), "${args.mode}", ${asSvg});`;
+                    const fallbackTask = new ExecuteCodePluginTask({ code: fallbackCode });
+                    const fallbackResult = await this.mcpServer.pluginBridge.executePluginTask(fallbackTask);
+                    imageData = fallbackResult.data!.result;
+                    successfulCandidate = fallbackCandidate;
+                    break;
+                } catch (candidateError: any) {
+                    fallbackError = candidateError;
+                }
+            }
+
+            if (!successfulCandidate) {
+                throw fallbackError;
+            }
+
+            fallbackNote =
+                `Primary export failed for ${args.shapeId}. ` +
+                `Returned fallback export for ${successfulCandidate.name} ` +
+                `(${successfulCandidate.type}, id=${successfulCandidate.id}, descendants=${successfulCandidate.descendantCount}).`;
+        }
 
         // handle output and return response
         if (!args.filePath) {
@@ -107,7 +147,11 @@ export class ExportShapeTool extends Tool<ExportShapeArgs> {
             if (args.format === "png") {
                 return new PNGResponse(await this.toPngImageBytes(imageData));
             } else {
-                return TextResponse.fromData(imageData);
+                const textResponse = TextResponse.fromData(imageData);
+                if (fallbackNote) {
+                    return new TextResponse(`${fallbackNote}\n\n${textResponse.content[0].text}`);
+                }
+                return textResponse;
             }
         } else {
             // save to file requested: make sure file system access is enabled
@@ -120,8 +164,50 @@ export class ExportShapeTool extends Tool<ExportShapeArgs> {
             } else {
                 FileUtils.writeTextFile(args.filePath, TextContent.textData(imageData));
             }
-            return new TextResponse(`The shape has been exported to ${args.filePath}`);
+            return new TextResponse(
+                fallbackNote ? `${fallbackNote}\nThe shape has been exported to ${args.filePath}` : `The shape has been exported to ${args.filePath}`
+            );
         }
+    }
+
+    private async tryDiagnoseExport(shapeId: string): Promise<any | null> {
+        try {
+            const task = new ExecuteCodePluginTask({
+                code: `return penpotUtils.diagnoseExportShape({ shapeId: ${JSON.stringify(shapeId)} });`,
+            });
+            const result = await this.mcpServer.pluginBridge.executePluginTask(task);
+            return result.data;
+        } catch (_error) {
+            return null;
+        }
+    }
+
+    private selectFallbackCandidates(
+        shapeId: string,
+        exportCandidates: Array<{ id: string; name: string; type: string; descendantCount: number }>
+    ): Array<{ id: string; name: string; type: string; descendantCount: number }> {
+        const filtered = exportCandidates.filter((candidate) => candidate.id !== shapeId);
+        if (filtered.length === 0) {
+            return [];
+        }
+
+        const preferred = filtered
+            .filter((candidate) => candidate.descendantCount > 0 && candidate.descendantCount <= 36)
+            .sort((left, right) => {
+                const typeDelta =
+                    (ExportShapeTool.FALLBACK_TYPE_PRIORITY[left.type] ?? 99) -
+                    (ExportShapeTool.FALLBACK_TYPE_PRIORITY[right.type] ?? 99);
+                if (typeDelta !== 0) {
+                    return typeDelta;
+                }
+                return left.descendantCount - right.descendantCount;
+            });
+
+        const secondary = filtered
+            .filter((candidate) => !preferred.some((entry) => entry.id === candidate.id))
+            .sort((left, right) => left.descendantCount - right.descendantCount);
+
+        return [...preferred, ...secondary].slice(0, 6);
     }
 
     /**

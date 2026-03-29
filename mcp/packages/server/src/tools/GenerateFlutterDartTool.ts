@@ -166,6 +166,7 @@ export class GenerateFlutterDartTool extends Tool<GenerateFlutterDartArgs> {
         const usesVariantCardHelper = this.treeUsesVariantCard(normalizedRoot);
         const usesFontWeightHelper = this.treeUsesFontWeightItem(normalizedRoot);
         const usesSectionTitleHelper = this.treeUsesSectionTitle(normalizedRoot);
+        const usesLucideIcons = this.treeUsesLucideIcons(normalizedRoot);
         const tokenMap = this.buildTokenValueMap(tokenCatalog, normalizedRoot);
         const appTokensClass = tokenMap.size > 0 ? this.renderAppTokensClass(tokenMap) : "";
         const helpers = [
@@ -180,7 +181,13 @@ export class GenerateFlutterDartTool extends Tool<GenerateFlutterDartArgs> {
             mode === "dartpad"
                 ? `void main() {\n  runApp(const MaterialApp(\n    debugShowCheckedModeBanner: false,\n    home: ${className}(),\n  ));\n}\n\n`
                 : "";
-        const dart = `import 'package:flutter/material.dart';
+        const importBlock = [
+            `import 'package:flutter/material.dart';`,
+            usesLucideIcons ? `import 'package:lucide_icons_flutter/lucide_icons.dart';` : "",
+        ]
+            .filter(Boolean)
+            .join("\n");
+        const dart = `${importBlock}
 
 ${mainWrapper}${appTokensClass ? `${appTokensClass}\n\n` : ""}class ${className} extends StatelessWidget {
   const ${className}({super.key});
@@ -291,8 +298,16 @@ ${body},
             return this.wrapSpacing(node, this.renderText(node, indent));
         }
 
+        if (node.widgetType === "icon") {
+            return this.wrapSpacing(node, this.renderIcon(node, indent));
+        }
+
         if (this.isVariantCard(node)) {
             return this.wrapSpacing(node, this.renderVariantCard(node));
+        }
+
+        if (node.widgetType === "rectangle" && node.children.length === 0) {
+            return this.wrapSpacing(node, this.renderLeafBox(node, indent));
         }
 
         if (node.children.length === 0 && !node.sourceComponentName && !node.sourceComponentPath) {
@@ -487,6 +502,36 @@ ${body},
         return this.renderContainerColumn(node, indent);
     }
 
+    private renderIcon(node: FlutterExportNode, indent: number): string {
+        const iconName = typeof node.props?.iconName === "string" ? String(node.props.iconName) : "";
+        const size =
+            typeof node.layoutIntent?.width === "number"
+                ? node.layoutIntent.width
+                : typeof node.layoutIntent?.height === "number"
+                  ? node.layoutIntent.height
+                  : 20;
+        const colorToken = this.resolveTokenRef(node, ["textColor", "color", "foreground", "content"]);
+        const iconRef = iconName ? `LucideIcons.${iconName}` : null;
+        const i = "  ".repeat(indent);
+
+        if (!iconRef) {
+            return `const SizedBox.shrink()`;
+        }
+
+        return `Icon(\n${i}  ${iconRef},\n${i}  size: ${size},${colorToken ? `\n${i}  color: ${colorToken},` : ""}\n${i})`;
+    }
+
+    private renderLeafBox(node: FlutterExportNode, indent: number): string {
+        const i = "  ".repeat(indent);
+        const width = typeof node.layoutIntent?.width === "number" ? `width: ${node.layoutIntent.width},\n${i}  ` : "";
+        const height = typeof node.layoutIntent?.height === "number" ? `height: ${node.layoutIntent.height},\n${i}  ` : "";
+        const decoration = this.renderContainerDecoration(node, i);
+        if (!width && !height && !decoration) {
+            return "const SizedBox.shrink()";
+        }
+        return `Container(\n${i}  ${width}${height}${decoration.trimEnd()}child: const SizedBox.shrink(),\n${i})`;
+    }
+
     private renderContainerDecoration(node: FlutterExportNode, indentPrefix: string): string {
         const fillToken = this.resolveTokenRef(node, ["fill", "background", "surface", "color"]);
         const radiusToken = this.resolveTokenRef(node, ["radius", "borderRadius"]);
@@ -616,9 +661,31 @@ ${body},
             }
         }
 
-        const entry = Object.entries(node.tokens).find(([tokenKey]) =>
-            keys.some((expected) => tokenKey.toLowerCase().includes(expected.toLowerCase()))
-        );
+        const aliasesByKey: Record<string, string[]> = {
+            fill: ["fill", "background", "surface"],
+            background: ["fill", "background", "surface"],
+            surface: ["fill", "background", "surface"],
+            color: ["color", "textColor", "foreground", "content"],
+            textColor: ["textColor", "foreground", "content", "color"],
+            foreground: ["foreground", "textColor", "content", "color"],
+            content: ["content", "foreground", "textColor", "color"],
+            radius: ["radius", "borderRadius"],
+            borderRadius: ["borderRadius", "radius"],
+            borderColor: ["borderColor", "strokeColor"],
+            stroke: ["strokeColor", "borderColor", "strokeWidth"],
+            border: ["borderColor", "strokeColor"],
+            fontSize: ["fontSize", "fontSizes"],
+            fontSizes: ["fontSizes", "fontSize"],
+            fontFamily: ["fontFamily", "fontFamilies"],
+            fontFamilies: ["fontFamilies", "fontFamily"],
+            fontWeight: ["fontWeight", "fontWeights"],
+            fontWeights: ["fontWeights", "fontWeight"],
+            typography: ["typography"],
+            gap: ["gap", "rowGap", "columnGap"],
+        };
+
+        const normalizedExpected = new Set(keys.flatMap((key) => aliasesByKey[key] ?? [key]).map((value) => value.toLowerCase()));
+        const entry = Object.entries(node.tokens).find(([tokenKey]) => normalizedExpected.has(tokenKey.toLowerCase()));
         return entry ? this.toFlutterTokenRef(entry[1]) : null;
     }
 
@@ -702,10 +769,8 @@ ${body},
     }
 
     private isVariantCard(node: FlutterExportNode): boolean {
-        const role = node.role?.toLowerCase();
         const semantic = node.semanticId?.toLowerCase() ?? "";
         return (
-            role === "card" ||
             (semantic.includes("variant-card") && !semantic.endsWith("-row") && node.widgetType === "board") ||
             (node.widgetType === "board" &&
                 node.children.length === 2 &&
@@ -741,6 +806,12 @@ ${body},
 
     private treeUsesSectionTitle(node: FlutterExportNode): boolean {
         return this.walkTree(node).some((entry) => this.isSectionTitle(entry));
+    }
+
+    private treeUsesLucideIcons(node: FlutterExportNode): boolean {
+        return this.walkTree(node).some(
+            (entry) => entry.widgetType === "icon" && (entry.sourceLibrary ?? "").toLowerCase().includes("lucide")
+        );
     }
 
     private walkTree(node: FlutterExportNode): FlutterExportNode[] {
@@ -858,7 +929,10 @@ ${body},
         for (const set of tokenCatalog?.sets ?? []) {
             for (const token of set.tokens ?? []) {
                 if (usedTokenNames.has(token.name)) {
-                    map.set(token.name, { tokenType: token.type, resolvedValue: token.resolvedValue });
+                    map.set(token.name, {
+                        tokenType: token.type,
+                        resolvedValue: token.resolvedValue ?? token.value,
+                    });
                 }
             }
         }
@@ -928,12 +1002,18 @@ ${body},
                 tokenType
             )
         ) {
+            if (resolvedValue === null || resolvedValue === undefined || resolvedValue === "") {
+                return null;
+            }
             const numeric = Number(resolvedValue);
             if (Number.isFinite(numeric)) {
                 return `  static const double ${field} = ${numeric};`;
             }
         }
         if (tokenType === "fontWeights") {
+            if (resolvedValue === null || resolvedValue === undefined || resolvedValue === "") {
+                return null;
+            }
             return `  static const FontWeight ${field} = ${this.mapFontWeight(resolvedValue as string | number)};`;
         }
         if (tokenType === "fontFamilies") {
