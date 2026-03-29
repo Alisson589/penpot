@@ -61,6 +61,17 @@ There is no MCP-native way to express:
 - navigation or panel collapse
 - bounded screen composition
 
+### 5. Large payloads are brittle
+
+Complex widget trees are currently passed as large JSON payloads, which makes the flow fragile in practice because of:
+
+- escaping problems in shell and HTTP tooling
+- large inline request bodies that are hard to inspect
+- duplicated boilerplate across tests and automations
+- poor ergonomics for composing nested widget trees by hand
+
+This is already visible in live MCP testing, where the request is valid at the schema level but becomes error-prone when transported as raw JSON.
+
 ## Target Model
 
 The MCP should work on top of a semantic intermediate representation.
@@ -174,8 +185,53 @@ Add new MCP tools in the server:
 - `update_widget_tree`
 - `export_widget`
 - `generate_flutter_code`
+- `create_widget_from_blueprint`
+- `compose_widget_payload`
 
 `execute_code` remains available as the escape hatch, but should stop being the primary path for app-like UI creation.
+
+## Payload Strategy
+
+The MCP should stop depending on giant hand-written JSON requests for non-trivial widget composition.
+
+Recommended direction:
+
+1. Keep `create_widget_tree` as the canonical low-level semantic tool.
+2. Add a blueprint layer that accepts compact inputs such as:
+   - widget type
+   - slots
+   - props
+   - variants
+3. Add a payload builder library in the repo so tests and clients generate valid requests programmatically.
+4. Prefer file-based request transport for smoke tests and automation instead of shell-embedded JSON blobs.
+
+## Payload Builder Library
+
+Add a small shared helper package for request construction, for example:
+
+- `packages/common/src/widget-blueprints.ts`
+- `packages/common/src/widget-payload-builder.ts`
+
+Suggested responsibilities:
+
+- compose nested `WidgetNode` trees from compact inputs
+- apply default slots, tokens, and responsive rules
+- validate blueprint-specific props before transport
+- serialize stable JSON payloads for MCP tools
+
+This avoids repeated ad hoc request authoring and makes widget creation closer to Flutter widget constructors than raw document mutation.
+
+## Blueprint-First MCP Flow
+
+For app-like screens, the preferred flow should become:
+
+1. choose a widget blueprint such as `metric_card` or `dashboard_shell`
+2. pass compact props and slot content
+3. let the payload builder expand defaults
+4. send the normalized `WidgetNode` tree to `create_widget_tree`
+5. store blueprint metadata for round-trip edits and code generation
+
+This reduces payload size, improves consistency, and makes the MCP feel like a UI framework instead of a drawing script bridge.
 
 ## Phase 4. Flutter-Oriented Widget Library
 
@@ -308,5 +364,11 @@ Implement the minimum viable semantic path:
 - first tool: `create_widget_tree`
 - first blueprint: `metric_card`
 - first composite blueprint: `dashboard_shell`
+
+After that, the next operational step should be:
+
+- introduce a shared payload builder for widget blueprints
+- migrate smoke tests away from giant inline JSON requests
+- add compact blueprint tools for common Flutter-oriented widgets
 
 This is the smallest change that moves the MCP from shape creation toward a Flutter-first widget system.
