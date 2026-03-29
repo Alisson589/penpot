@@ -13,6 +13,7 @@
     "start:multi-user": "pnpm -r --parallel run start:multi-user",
     "bootstrap": "pnpm -r install && pnpm run build && pnpm run start",
     "bootstrap:multi-user": "pnpm -r install && pnpm run build && pnpm run start:multi-user",
+    "smoke:widget-review": "pnpm run build && node ./scripts/widget-smoke-review.mjs",
     "fmt": "prettier --write packages/",
     "fmt:check": "prettier --check packages/"
   },
@@ -23,6 +24,7 @@
   "packageManager": "pnpm@10.31.0+sha512.e3927388bfaa8078ceb79b748ffc1e8274e84d75163e67bc22e06c0d3aed43dd153151cbf11d7f8301ff4acb98c68bdc5cadf6989532801ffafe3b3e4a63c268",
   "devDependencies": {
     "concurrently": "^9.2.1",
+    "playwright": "1.57.0",
     "prettier": "^3.0.0"
   }
 }

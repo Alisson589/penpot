@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MCP Widget Smoke Review</title>
+  <style>
+    :root {
+      --bg: #eef3f8;
+      --panel: #ffffff;
+      --ink: #102033;
+      --muted: #627289;
+      --accent: #2f6bff;
+      --line: #d9e2ef;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 32px;
+      font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+      background: radial-gradient(circle at top left, #f9fbff, var(--bg));
+      color: var(--ink);
+    }
+    .shell {
+      max-width: 1440px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      gap: 24px;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      padding: 24px;
+      box-shadow: 0 20px 50px rgba(16, 32, 51, 0.08);
+    }
+    h1 { margin: 0 0 12px; font-size: 28px; }
+    h2 { margin: 0 0 12px; font-size: 18px; }
+    p, li { color: var(--muted); line-height: 1.5; }
+    ul { padding-left: 20px; margin: 12px 0 0; }
+    code {
+      background: #f4f7fb;
+      border-radius: 8px;
+      padding: 2px 6px;
+      color: var(--accent);
+    }
+    img {
+      width: 100%;
+      height: auto;
+      display: block;
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      background: #fff;
+    }
+    .meta {
+      display: grid;
+      gap: 10px;
+      margin-top: 16px;
+    }
+    .meta-row {
+      padding: 12px 14px;
+      border-radius: 14px;
+      background: #f8fbff;
+      border: 1px solid var(--line);
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <section class="panel">
+      <h1>MCP Widget Smoke</h1>
+      <p>Playwright review of a widget tree created through <code>create_widget_tree</code> and exported through <code>export_shape</code>.</p>
+      <div class="meta">
+        <div class="meta-row"><strong>Root shape:</strong> <code>311c93a3-5b39-8072-8007-c926279172d2</code></div>
+        <div class="meta-row"><strong>Export target:</strong> <code>311c93a3-5b39-8072-8007-c92627d0250f</code></div>
+        <div class="meta-row"><strong>Node count:</strong> <code>30</code></div>
+        <div class="meta-row"><strong>Payload file:</strong> <code>export/widget-smoke-payload.json</code></div>
+        <div class="meta-row"><strong>Export file:</strong> <code>export/widget-smoke-dashboard.png</code></div>
+      </div>
+      <h2>What this validates</h2>
+      <ul>
+        <li>Payload generation without manual giant JSON blobs</li>
+        <li>Semantic grouping of widgets in Penpot</li>
+        <li>End-to-end export through the MCP pipeline</li>
+        <li>Visual review artifact suitable for regression checks</li>
+      </ul>
+      <h2>Findings</h2>
+      <ul><li>Dashboard root export failed: Tool execution failed: Error: Error handling task: http error</li><li>Fallback widget export succeeded for metric_card.</li></ul>
+    </section>
+    <section class="panel">
+      <h2>Rendered Export</h2>
+      <img src="data:image/png;base64,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" alt="Exported Penpot widget" />
+    </section>
+  </div>
+</body>
+</html>
