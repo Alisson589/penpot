@@ -31,7 +31,11 @@ export class UpsertDesignTokenArgs {
             ])
             .describe("Penpot token type."),
         name: z.string().min(1).describe("Token name, typically using dot notation such as `color.primary`."),
-        value: z.any().describe("Token value. Pass the Penpot token value shape expected for the chosen type."),
+        value: z
+            .any()
+            .describe(
+                "Token value. The MCP normalizes common Penpot quirks automatically, for example numbers to text for spacing/fontSizes/borderRadius-like tokens and a single string to an array for fontFamilies."
+            ),
         description: z.string().optional().describe("Optional token description."),
         activateSet: z.boolean().optional().describe("When true, activate the set after ensuring/updating the token."),
     };
@@ -54,7 +58,7 @@ export class UpsertDesignTokenTool extends Tool<UpsertDesignTokenArgs> {
     }
 
     public getToolDescription(): string {
-        return "Creates or updates a real Penpot design token inside a token set in the file token catalog.";
+        return "Creates or updates a real Penpot design token inside a token set in the file token catalog, with MCP-side normalization for common Penpot token value formats.";
     }
 
     protected async executeCore(args: UpsertDesignTokenArgs): Promise<ToolResponse> {

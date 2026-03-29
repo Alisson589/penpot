@@ -111,8 +111,10 @@ type FlutterExportLayoutIntent = {
 
 type FlutterExportNode = {
     widgetId: string;
+    semanticId?: string;
     sequenceId?: number;
     widgetType: string;
+    role?: string;
     displayName: string;
     sourceShapeId: string;
     parentWidgetId?: string;
@@ -1290,6 +1292,31 @@ export class PenpotUtils {
         };
     } {
         const normalizeDesignTokenValue = (type: string, value: unknown): unknown => {
+            if (
+                type === "spacing" ||
+                type === "borderRadius" ||
+                type === "fontSizes" ||
+                type === "dimension" ||
+                type === "borderWidth" ||
+                type === "letterSpacing" ||
+                type === "opacity" ||
+                type === "rotation" ||
+                type === "sizing"
+            ) {
+                if (typeof value === "number") {
+                    return String(value);
+                }
+            }
+
+            if (type === "fontFamilies") {
+                if (typeof value === "string") {
+                    return [value];
+                }
+                if (Array.isArray(value)) {
+                    return value.map((entry) => String(entry));
+                }
+            }
+
             if (type === "shadow") {
                 if (typeof value === "string") {
                     return value;
@@ -2455,14 +2482,18 @@ export class PenpotUtils {
     private static buildFlutterExportNode(shape: Shape, parentWidgetId?: string): FlutterExportNode {
         const metadata = this.readWidgetPluginData(shape);
         const component = shape.isComponentInstance() ? shape.component() : null;
-        const widgetId = metadata.id || this.slugify(this.getPlainWidgetName(shape.name || shape.type) || shape.id);
+        const semanticId = metadata.id || this.slugify(this.getPlainWidgetName(shape.name || shape.type) || shape.id);
+        const widgetId = this.buildFlutterExportWidgetId(shape, semanticId, metadata.sequence ?? undefined);
         const layoutIntent = this.inferFlutterLayoutIntent(shape, metadata);
         const spacingIntent = this.inferFlutterSpacingIntent(shape, metadata);
+        const inferredProps = this.inferFlutterProps(shape, metadata.props);
 
         return {
             widgetId,
+            semanticId,
             sequenceId: metadata.sequence ?? undefined,
             widgetType: metadata.type || (component ? "library_component" : shape.type),
+            role: metadata.role || undefined,
             displayName: this.getPlainWidgetName(metadata.name || shape.name || shape.type),
             sourceShapeId: shape.id,
             parentWidgetId,
@@ -2473,10 +2504,18 @@ export class PenpotUtils {
             sourceComponentPath: metadata.sourceComponentPath || component?.path || null,
             layoutIntent: layoutIntent ?? undefined,
             spacingIntent: spacingIntent ?? undefined,
-            props: metadata.props ?? undefined,
+            props: inferredProps,
             tokens: metadata.tokens ?? undefined,
             children: [],
         };
+    }
+
+    private static buildFlutterExportWidgetId(shape: Shape, semanticId: string, sequence?: number): string {
+        if (typeof sequence === "number" && Number.isFinite(sequence)) {
+            return `${semanticId}__${sequence}`;
+        }
+
+        return `${semanticId}__${shape.id.replace(/[^a-zA-Z0-9]+/g, "_")}`;
     }
 
     private static readWidgetPluginData(shape: Shape): {
@@ -2618,6 +2657,40 @@ export class PenpotUtils {
         }
 
         return null;
+    }
+
+    private static inferFlutterProps(
+        shape: Shape,
+        existingProps?: Record<string, unknown>
+    ): Record<string, unknown> | undefined {
+        const props = existingProps ? { ...existingProps } : {};
+
+        if (shape.type === "text") {
+            const textShape = shape as unknown as Text & { characters?: string; content?: string };
+            if (props.text === undefined) {
+                const textValue =
+                    textShape.characters ??
+                    textShape.content ??
+                    (typeof (shape as any).text === "string" ? (shape as any).text : undefined);
+                if (typeof textValue === "string" && textValue.trim().length > 0) {
+                    props.text = textValue;
+                }
+            }
+            if (props.fontSize === undefined && (shape as any).fontSize) {
+                const fontSize = Number((shape as any).fontSize);
+                if (Number.isFinite(fontSize)) {
+                    props.fontSize = fontSize;
+                }
+            }
+            if (props.fontFamily === undefined && typeof (shape as any).fontFamily === "string") {
+                props.fontFamily = (shape as any).fontFamily;
+            }
+            if (props.fontWeight === undefined && (shape as any).fontWeight !== undefined) {
+                props.fontWeight = (shape as any).fontWeight;
+            }
+        }
+
+        return Object.keys(props).length > 0 ? props : undefined;
     }
 
     private static slugify(value: string): string {

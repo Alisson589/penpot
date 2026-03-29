@@ -191,8 +191,10 @@ export interface FlutterExportLayoutIntent {
 
 export interface FlutterExportNode {
     widgetId: string;
+    semanticId?: string;
     sequenceId?: number;
     widgetType: string;
+    role?: string;
     displayName: string;
     sourceShapeId: string;
     parentWidgetId?: string;

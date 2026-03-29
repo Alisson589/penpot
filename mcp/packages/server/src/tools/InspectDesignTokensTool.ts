@@ -29,7 +29,7 @@ export class InspectDesignTokensTool extends Tool<InspectDesignTokensArgs> {
     public getToolDescription(): string {
         return (
             "Inspects the file's real Penpot token catalog (`penpot.library.local.tokens`) and returns themes, sets, " +
-            "active state, and token definitions. Use this instead of relying on a `_Tokens` page."
+            "active state, and token definitions. Use this instead of relying on a `_Tokens` page, and use it to confirm the normalized value shapes that Penpot stored."
         );
     }
 

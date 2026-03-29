@@ -27,6 +27,7 @@ import { EnsurePageStructureTool } from "./tools/EnsurePageStructureTool";
 import { CreateMainComponentFromShapeTool } from "./tools/CreateMainComponentFromShapeTool";
 import { CreateVariantGroupFromComponentsTool } from "./tools/CreateVariantGroupFromComponentsTool";
 import { ExportToFlutterTool } from "./tools/ExportToFlutterTool";
+import { GenerateFlutterDartTool } from "./tools/GenerateFlutterDartTool";
 
 /**
  * Session context for request-scoped data.
@@ -167,6 +168,7 @@ export class PenpotMcpServer {
             new CreateMainComponentFromShapeTool(this),
             new CreateVariantGroupFromComponentsTool(this),
             new ExportToFlutterTool(this),
+            new GenerateFlutterDartTool(this),
             new ExecuteCodeTool(this),
             new FindLibraryComponentsTool(this),
             new InstantiateLibraryComponentTool(this),

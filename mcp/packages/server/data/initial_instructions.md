@@ -314,6 +314,13 @@ Each Penpot file has its own local library and can connect to external shared li
 Priority rule for MCP-driven UI creation:
   * ALWAYS inspect the current file's connected libraries before creating manual widget structures.
   * If a suitable library component already exists, instantiate that component instead of drawing a manual substitute.
+  * ALWAYS create or reuse design tokens before hardcoding visual primitives for app UI.
+  * For colors, spacing, sizing, radius, typography, opacity, and similar design-system values:
+    - prefer real Penpot tokens in the token catalog
+    - store the token references in widget metadata
+    - only fall back to literal values when no token exists yet
+  * When building app-like UI, treat token creation as part of setup, not as an optional later step.
+  * If a widget is intended for downstream code export, its visual decisions should be traceable to token names whenever possible.
   * Use manual widget construction only when:
     - no matching library component exists
     - you need a shell/layout wrapper around library instances
