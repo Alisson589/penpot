@@ -8,7 +8,7 @@
 
 ### Local guide
 
-- [penpot-component-guide.md](/home/sebas/app/penpot/penpot/mcp/docs/penpot-component-guide.md)
+- [penpot-component-guide.md](/home/sebas/app/penpot/penpot/vault/planos/penpot-component-guide.md)
 
 ### Penpot references
 
