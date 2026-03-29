@@ -9,7 +9,7 @@ Currently, the Penpot MCP uses JSON as the primary payload format for all tool r
 3. **Fragility**: Escaping issues in shell and HTTP tooling
 4. **Poor ergonomics**: Hand-written JSON requests are error-prone
 
-The document [flutter-first-widget-plan.md](./flutter-first-widget-plan.md#5-large-payloads-are-brittle) already identifies these issues.
+The document [flutter-first-widget-plan.md](/home/sebas/app/penpot/penpot/vault/planos/consolidados/flutter-first-widget-plan.md#5-large-payloads-are-brittle) already identifies these issues.
 
 ## Goals
 
@@ -299,4 +299,4 @@ Phase 5:    toon default, json fallback (if needed)
 - [TOON Official Site](https://toonformat.dev/)
 - [TOON Specification](https://github.com/toon-format/spec)
 - [TOON TypeScript SDK](https://www.npmjs.com/package/@toon-format/toon)
-- [Original Problem Analysis](./flutter-first-widget-plan.md#5-large-payloads-are-brittle)
+- [Original Problem Analysis](/home/sebas/app/penpot/penpot/vault/planos/consolidados/flutter-first-widget-plan.md#5-large-payloads-are-brittle)
