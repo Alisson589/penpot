@@ -92,6 +92,47 @@ type WidgetTreeResult = {
     nodes: WidgetTreeNodeResult[];
 };
 
+type FlutterExportSpacingIntent = {
+    gap?: number;
+    padding?: number | WidgetPadding;
+    margin?: number | WidgetPadding;
+};
+
+type FlutterExportLayoutIntent = {
+    kind: "stack" | "row" | "column" | "grid" | "component";
+    width?: number | "fill" | "hug";
+    height?: number | "fill" | "hug";
+    align?: "start" | "end" | "center" | "stretch";
+    crossAlign?: "start" | "end" | "center" | "stretch";
+    justifyContent?: "start" | "center" | "end" | "space-between" | "space-around" | "space-evenly" | "stretch";
+    wrap?: "wrap" | "nowrap";
+    columns?: number;
+};
+
+type FlutterExportNode = {
+    widgetId: string;
+    sequenceId?: number;
+    widgetType: string;
+    displayName: string;
+    sourceShapeId: string;
+    parentWidgetId?: string;
+    slot?: string;
+    sourceLibrary?: string;
+    sourceComponentId?: string;
+    sourceComponentName?: string;
+    sourceComponentPath?: string | null;
+    layoutIntent?: FlutterExportLayoutIntent;
+    spacingIntent?: FlutterExportSpacingIntent;
+    props?: Record<string, unknown>;
+    tokens?: Record<string, string>;
+    children: FlutterExportNode[];
+};
+
+type FlutterExportTree = {
+    root: FlutterExportNode;
+    nodes: FlutterExportNode[];
+};
+
 type LibraryComponentSummary = {
     libraryId: string;
     libraryName: string;
@@ -1492,6 +1533,51 @@ export class PenpotUtils {
         return { root, nodes };
     }
 
+    public static exportToFlutterTree(params?: { shapeId?: string; pageId?: string }): FlutterExportTree {
+        const page = params?.pageId ? this.getPageById(params.pageId) : penpot.currentPage;
+        if (!penpot.currentFile) {
+            throw new Error("No current file is active in the plugin context.");
+        }
+        if (!page) {
+            throw new Error("No current page is active in the plugin context.");
+        }
+
+        const rootShape = params?.shapeId ? this.findShapeOnPageById(page, params.shapeId) : null;
+        if (params?.shapeId && !rootShape) {
+            throw new Error(`Shape not found on page: ${params.shapeId}`);
+        }
+
+        const nodes: FlutterExportNode[] = [];
+        const walkShape = (shape: Shape, parentWidgetId?: string): FlutterExportNode => {
+            const node = this.buildFlutterExportNode(shape, parentWidgetId);
+            nodes.push(node);
+
+            if ("children" in shape && shape.children?.length) {
+                node.children = shape.children.map((child) => walkShape(child, node.widgetId));
+            }
+
+            return node;
+        };
+
+        const root: FlutterExportNode = rootShape
+            ? walkShape(rootShape)
+            : {
+                  widgetId: `page-${page.id}`,
+                  widgetType: "page",
+                  displayName: page.name,
+                  sourceShapeId: page.root.id,
+                  children: (((page.root as Shape & { children?: Shape[] }).children ?? []) as Shape[]).map((child: Shape) =>
+                      walkShape(child, `page-${page.id}`)
+                  ),
+              };
+
+        if (!rootShape) {
+            nodes.unshift(root);
+        }
+
+        return { root, nodes };
+    }
+
     private static instantiateWidgetNode(
         node: WidgetNode,
         parent: Board | null,
@@ -2364,6 +2450,174 @@ export class PenpotUtils {
         return type
             .replace(/[_-]+/g, " ")
             .replace(/\b\w/g, (char) => char.toUpperCase());
+    }
+
+    private static buildFlutterExportNode(shape: Shape, parentWidgetId?: string): FlutterExportNode {
+        const metadata = this.readWidgetPluginData(shape);
+        const component = shape.isComponentInstance() ? shape.component() : null;
+        const widgetId = metadata.id || this.slugify(this.getPlainWidgetName(shape.name || shape.type) || shape.id);
+        const layoutIntent = this.inferFlutterLayoutIntent(shape, metadata);
+        const spacingIntent = this.inferFlutterSpacingIntent(shape, metadata);
+
+        return {
+            widgetId,
+            sequenceId: metadata.sequence ?? undefined,
+            widgetType: metadata.type || (component ? "library_component" : shape.type),
+            displayName: this.getPlainWidgetName(metadata.name || shape.name || shape.type),
+            sourceShapeId: shape.id,
+            parentWidgetId,
+            slot: metadata.slot || undefined,
+            sourceLibrary: metadata.sourceLibrary || undefined,
+            sourceComponentId: metadata.sourceComponentId || component?.id || undefined,
+            sourceComponentName: metadata.sourceComponentName || component?.name || undefined,
+            sourceComponentPath: metadata.sourceComponentPath || component?.path || null,
+            layoutIntent: layoutIntent ?? undefined,
+            spacingIntent: spacingIntent ?? undefined,
+            props: metadata.props ?? undefined,
+            tokens: metadata.tokens ?? undefined,
+            children: [],
+        };
+    }
+
+    private static readWidgetPluginData(shape: Shape): {
+        id?: string;
+        sequence?: number | null;
+        type?: string;
+        name?: string;
+        role?: string;
+        slot?: string;
+        props?: Record<string, unknown>;
+        tokens?: Record<string, string>;
+        layout?: Partial<WidgetLayoutSpec>;
+        sourceLibrary?: string;
+        sourceComponentId?: string;
+        sourceComponentName?: string;
+        sourceComponentPath?: string | null;
+    } {
+        const prefix = this.WIDGET_PLUGIN_PREFIX;
+        const parseJson = <T>(raw: string): T | undefined => {
+            try {
+                return JSON.parse(raw) as T;
+            } catch (_error) {
+                return undefined;
+            }
+        };
+
+        const sequenceRaw = shape.getPluginData(this.WIDGET_SEQUENCE_KEY);
+        const sequence = sequenceRaw ? Number(sequenceRaw) : null;
+
+        return {
+            id: shape.getPluginData(`${prefix}.id`) || undefined,
+            sequence: Number.isFinite(sequence) ? sequence : null,
+            type: shape.getPluginData(`${prefix}.type`) || undefined,
+            name: shape.getPluginData(`${prefix}.name`) || undefined,
+            role: shape.getPluginData(`${prefix}.role`) || undefined,
+            slot: shape.getPluginData(`${prefix}.slot`) || undefined,
+            props: (() => {
+                const raw = shape.getPluginData(`${prefix}.props`);
+                return raw ? parseJson<Record<string, unknown>>(raw) : undefined;
+            })(),
+            tokens: (() => {
+                const raw = shape.getPluginData(`${prefix}.tokens`);
+                return raw ? parseJson<Record<string, string>>(raw) : undefined;
+            })(),
+            layout: (() => {
+                const raw = shape.getPluginData(`${prefix}.layout`);
+                return raw ? parseJson<Partial<WidgetLayoutSpec>>(raw) : undefined;
+            })(),
+            sourceLibrary: shape.getPluginData(`${prefix}.sourceLibrary`) || undefined,
+            sourceComponentId: shape.getPluginData(`${prefix}.sourceComponentId`) || undefined,
+            sourceComponentName: shape.getPluginData(`${prefix}.sourceComponentName`) || undefined,
+            sourceComponentPath: shape.getPluginData(`${prefix}.sourceComponentPath`) || undefined,
+        };
+    }
+
+    private static inferFlutterLayoutIntent(
+        shape: Shape,
+        metadata: ReturnType<typeof PenpotUtils.readWidgetPluginData>
+    ): FlutterExportLayoutIntent | null {
+        if (metadata.layout) {
+            return {
+                kind:
+                    metadata.layout.kind === "row" ||
+                    metadata.layout.kind === "column" ||
+                    metadata.layout.kind === "grid" ||
+                    metadata.layout.kind === "stack"
+                        ? metadata.layout.kind
+                        : "component",
+                width: metadata.layout.width,
+                height: metadata.layout.height,
+                align: metadata.layout.align,
+                crossAlign: metadata.layout.crossAlign,
+                justifyContent: metadata.layout.justifyContent,
+                wrap: metadata.layout.wrap,
+                columns: metadata.layout.columns,
+            };
+        }
+
+        if (shape.isComponentInstance()) {
+            return { kind: "component" };
+        }
+
+        if ("flex" in shape && shape.flex) {
+            return {
+                kind: shape.flex.dir === "row" ? "row" : "column",
+                wrap: shape.flex.wrap,
+                align: shape.flex.alignItems,
+                justifyContent: shape.flex.justifyContent,
+            };
+        }
+
+        if ("grid" in shape && shape.grid) {
+            return {
+                kind: "grid",
+                columns: shape.grid.columns?.length ?? undefined,
+            };
+        }
+
+        if (shape.type === "board" && "children" in shape && shape.children?.length) {
+            return { kind: "column" };
+        }
+
+        return null;
+    }
+
+    private static inferFlutterSpacingIntent(
+        shape: Shape,
+        metadata: ReturnType<typeof PenpotUtils.readWidgetPluginData>
+    ): FlutterExportSpacingIntent | null {
+        if (metadata.layout) {
+            return {
+                gap: metadata.layout.gap,
+                padding: metadata.layout.padding as number | WidgetPadding | undefined,
+            };
+        }
+
+        if ("flex" in shape && shape.flex) {
+            return {
+                gap: Math.max(shape.flex.rowGap ?? 0, shape.flex.columnGap ?? 0),
+                padding: {
+                    top: shape.flex.topPadding ?? 0,
+                    right: shape.flex.rightPadding ?? 0,
+                    bottom: shape.flex.bottomPadding ?? 0,
+                    left: shape.flex.leftPadding ?? 0,
+                },
+            };
+        }
+
+        if ("grid" in shape && shape.grid) {
+            return {
+                gap: Math.max(shape.grid.rowGap ?? 0, shape.grid.columnGap ?? 0),
+                padding: {
+                    top: shape.grid.topPadding ?? 0,
+                    right: shape.grid.rightPadding ?? 0,
+                    bottom: shape.grid.bottomPadding ?? 0,
+                    left: shape.grid.leftPadding ?? 0,
+                },
+            };
+        }
+
+        return null;
     }
 
     private static slugify(value: string): string {
