@@ -9,6 +9,7 @@
   },
   "scripts": {
     "build": "esbuild src/index.ts --bundle --platform=node --target=node18 --format=esm --outfile=dist/index.js --banner:js=\"#!/usr/bin/env node\" --packages=external",
+    "build:exe": "esbuild src/index.ts --bundle --platform=node --target=node18 --format=cjs --outfile=dist/standalone.cjs && npx pkg dist/standalone.cjs --targets node18-win-x64 --output ../../penpot-cli.exe",
     "types:check": "tsc --noEmit",
     "clean": "rm -rf dist/"
   },
