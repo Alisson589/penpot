@@ -56,4 +56,20 @@ export async function initCommand(
     const failed = results.filter((r) => r.isError);
     output.warn(`Init completed with ${failed.length} error(s)`);
   }
+
+  output.info(`
+============================================================
+🤖 CRITICAL AGENT INSTRUCTIONS FOR UI BUILDING
+============================================================
+1. CLI vs MCP BOUNDARY:
+   - Use penpot-cli for macro checks (init, health-check, pre-export).
+   - Use MCP Tools directly for constructing UI (e.g., create_component_shell, create_text_block).
+   - DO NOT USE CLI TO CREATE UI. It does not accept complex JSON natively.
+
+2. execute_code LIMITATIONS & RULES:
+   - Never inject Javascript to build screens if high-level MCP tools exist.
+   - Penpot 'width' & 'height' properties are READ-ONLY. Use node.resize(w, h).
+   - React/CSS properties like 'flexStart' or 'spaceBetween' DO NOT EXIST in Penpot. 
+     You MUST use 'start', 'end', 'space-between', 'center' instead.
+============================================================`);
 }
