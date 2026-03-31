@@ -5,6 +5,11 @@ import { PenpotMcpClient } from "./client.js";
 
 // Commands
 import { preflightCommand } from "./commands/preflight.js";
+import { initCommand } from "./commands/init.js";
+import { buildComponentCommand, type BuildComponentOptions } from "./commands/build-component.js";
+import { buildScreenCommand, type BuildScreenOptions } from "./commands/build-screen.js";
+import { healthCheckCommand } from "./commands/health-check.js";
+import { preExportCommand } from "./commands/pre-export.js";
 import {
   createScreenCommand,
   type CreateScreenOptions,
@@ -24,6 +29,10 @@ import {
   exportFlutterCommand,
   type ExportFlutterOptions,
 } from "./commands/export-flutter.js";
+import {
+  assembleScreenCommand,
+  type AssembleScreenOptions,
+} from "./commands/assemble-screen.js";
 
 const VERSION = "1.0.0";
 
@@ -110,6 +119,67 @@ program
   );
 
 program
+  .command("init")
+  .description("Run the recommended startup sequence including canvas inspection")
+  .action(
+    withClient(async (client, output) => {
+      await initCommand(client, output);
+    })
+  );
+
+program
+  .command("health-check")
+  .description("Run full diagnostics and health check")
+  .action(
+    withClient(async (client, output) => {
+      await healthCheckCommand(client, output);
+    })
+  );
+
+program
+  .command("pre-export")
+  .description("Validate design before exporting")
+  .action(
+    withClient(async (client, output) => {
+      await preExportCommand(client, output);
+    })
+  );
+
+program
+  .command("build-component")
+  .description("Build component flow: create shell, organize, validate, and publish")
+  .requiredOption("-n, --name <name>", "Component name")
+  .option("-c, --category <category>", "Component category")
+  .action(
+    withClient(async (client, output, cmd) => {
+      const opts = cmd.opts();
+      const options: BuildComponentOptions = {
+        name: opts.name,
+        category: opts.category,
+      };
+      await buildComponentCommand(client, output, options);
+    })
+  );
+
+program
+  .command("build-screen")
+  .description("Build screen flow: assemble screen on _Components and lint it")
+  .requiredOption("-n, --name <name>", "Screen name")
+  .option("-d, --device <device>", "Target device", "desktop")
+  .option("--components <list>", "Comma-separated components to place")
+  .action(
+    withClient(async (client, output, cmd) => {
+      const opts = cmd.opts();
+      const options: BuildScreenOptions = {
+        name: opts.name,
+        device: opts.device,
+        components: opts.components ? (opts.components as string).split(",").map(c => c.trim()) : [],
+      };
+      await buildScreenCommand(client, output, options);
+    })
+  );
+
+program
   .command("create-screen")
   .description("Create a new screen page with device frames")
   .requiredOption("-n, --name <name>", "Screen name (e.g. Dashboard, Home)")
@@ -167,14 +237,54 @@ program
     "--screen <page>",
     "Target screen page name"
   )
+  .option(
+    "--target-shape-id <id>",
+    "Target slot/container shape ID (defaults to first board on page)"
+  )
   .action(
     withClient(async (client, output, cmd) => {
       const opts = cmd.opts();
       const options: PlaceComponentOptions = {
         componentName: opts.component,
         screenPage: opts.screen,
+        targetShapeId: opts.targetShapeId,
       };
       await placeComponentCommand(client, output, options);
+    })
+  );
+
+program
+  .command("assemble-screen")
+  .description(
+    "Assemble a screen board on _Components page (bypasses cross-page instability)"
+  )
+  .requiredOption("-n, --name <name>", "Screen name (e.g. Dashboard)")
+  .option(
+    "-d, --device <device>",
+    "Target device: mobile, tablet, or desktop",
+    "desktop"
+  )
+  .option(
+    "--components <list>",
+    "Comma-separated component names to instantiate"
+  )
+  .option(
+    "--offset-y <y>",
+    "Y offset to place the screen board (default: 5000)",
+    "5000"
+  )
+  .action(
+    withClient(async (client, output, cmd) => {
+      const opts = cmd.opts();
+      const options: AssembleScreenOptions = {
+        name: opts.name,
+        device: opts.device,
+        components: opts.components
+          ? (opts.components as string).split(",").map((s: string) => s.trim())
+          : undefined,
+        offsetY: parseInt(opts.offsetY as string, 10),
+      };
+      await assembleScreenCommand(client, output, options);
     })
   );
 

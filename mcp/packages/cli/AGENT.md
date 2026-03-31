@@ -21,10 +21,11 @@ penpot-cli --server-url http://localhost:4401/mcp [--user-token TOKEN] <comando>
 
 ### Comandos
 - `preflight` — checa conexão, plugin e setup do arquivo.
-- `create-screen -n <nome> [-d mobile,tablet,desktop]` — cria/reusa página `Screens/<nome>` e frames.
+- `create-screen -n <nome> [-d mobile,tablet,desktop]` — cria/reusa página `Screens/<nome>` e frames (fluxo antigo, use assemble-screen de preferência).
+- `assemble-screen -n <nome> -d <device> --components "C1,C2"` — monta uma board de tela na página `_Components` com os componentes dentro, escapando de bugs cross-page.
 - `create-component -n <nome> [-c <categoria>]` — cria shell em `_Components` (posição (0,0), respeita layout passado pelo MCP).
 - `publish-components` — promove shells elegíveis de `_Components` para a biblioteca local.
-- `place-component --component <nome> --screen <Screens/...>` — instancia componente em uma screen.
+- `place-component --component <nome> --screen <Screens/...> [--target-shape-id <id>]` — instancia componente em uma board existente.
 - `tokens plan` — planeja sistema e sugere nomes.
 - `tokens setup` — normaliza/persiste tokens planejados.
 - `lint [--page-id <id>]` — roda validações (layout de `_Components`, composição de screen, padrões inseguros).
@@ -33,7 +34,7 @@ penpot-cli --server-url http://localhost:4401/mcp [--user-token TOKEN] <comando>
 ## Ordem recomendada
 1) `penpot-cli preflight`
 2) `penpot-cli create-component` (um de cada vez) → `penpot-cli publish-components`
-3) `penpot-cli create-screen` → `penpot-cli place-component`
+3) `penpot-cli assemble-screen` -> Peça ao utilizador para mover a board gerada de `_Components` para `Screens/*` manualmente e deletar a de origem.
 4) `penpot-cli lint`
 5) `penpot-cli export flutter`
 

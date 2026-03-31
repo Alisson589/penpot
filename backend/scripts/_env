@@ -28,6 +28,7 @@ export PENPOT_FLAGS="\
        enable-transit-readable-response \
        enable-demo-users \
        enable-user-feedback \
+       disable-email-verification \
        disable-secure-session-cookies \
        enable-smtp \
        enable-prepl-server \

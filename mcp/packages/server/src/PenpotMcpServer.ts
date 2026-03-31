@@ -56,6 +56,7 @@ import { LintScreenCompositionTool } from "./tools/LintScreenCompositionTool";
 import { CreateTextBlockTool } from "./tools/CreateTextBlockTool";
 import { CreateComponentVariantTool } from "./tools/CreateComponentVariantTool";
 import { ApplyComponentVariantOverridesTool } from "./tools/ApplyComponentVariantOverridesTool";
+import { AssembleScreenOnComponentsPageTool } from "./tools/AssembleScreenOnComponentsPageTool";
 
 /**
  * Session context for request-scoped data.
@@ -222,6 +223,7 @@ export class PenpotMcpServer {
             new CreateMainComponentFromShapeTool(this),
             new CreateVariantGroupFromComponentsTool(this),
             new PlaceComponentOnScreenTool(this),
+            new AssembleScreenOnComponentsPageTool(this),
             new ExportToFlutterTool(this),
             new GenerateFlutterDartTool(this),
             new ExecuteCodeTool(this),
