@@ -35,6 +35,9 @@ export class PublishComponentsFromComponentsPageTool extends Tool<PublishCompone
         const code = `return penpotUtils.publishComponentsFromComponentsPage(${JSON.stringify(args)});`;
         const task = new ExecuteCodePluginTask({ code });
         const result = await this.mcpServer.pluginBridge.executePluginTask(task);
+        if (result.data && typeof result.data === 'object' && 'skipped' in result.data && Array.isArray((result.data as any).skipped) && (result.data as any).skipped.length > 0) {
+            return new TextResponse(`Published ${((result.data as any).published || []).length} components, but SKIPPED ${((result.data as any).skipped).length} components (review errors):\n${JSON.stringify(result.data, null, 2)}`);
+        }
         return new TextResponse(JSON.stringify(result.data ?? null, null, 2));
     }
 }

@@ -9,7 +9,7 @@ import { ExecuteCodePluginTask } from "../tasks/ExecuteCodePluginTask";
 export class CreateComponentShellArgs {
     static schema = {
         name: z.string().min(1).describe("Component shell name to create on `_Components`."),
-        root: z.any().describe("Root widget tree definition used to build the component shell."),
+        root: z.any().describe("Root widget tree definition. MUST contain 'children' array with at least one node, otherwise it will fail."),
         componentPageName: z.string().optional().describe("Optional component page name. Defaults to `_Components`."),
         category: z.string().optional().describe("Optional category label in `_Components`, e.g. `CARDS` or `MEMBERS`."),
     };

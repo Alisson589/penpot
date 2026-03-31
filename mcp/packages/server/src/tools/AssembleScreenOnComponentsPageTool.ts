@@ -41,7 +41,7 @@ export class AssembleScreenOnComponentsPageTool extends Tool<AssembleScreenOnCom
     }
 
     protected async executeCore(args: AssembleScreenOnComponentsPageArgs): Promise<ToolResponse> {
-        const offsetY = args.offsetY ?? 5000;
+        const providedOffsetY = args.offsetY ?? null;
         const deviceSpec = args.device === "mobile"
             ? { width: 360, height: 800, suffix: "Mobile" }
             : args.device === "tablet"
@@ -50,7 +50,7 @@ export class AssembleScreenOnComponentsPageTool extends Tool<AssembleScreenOnCom
 
         const code = `
 const params = ${JSON.stringify(args)};
-const offsetY = ${offsetY};
+const providedOffsetY = ${providedOffsetY};
 const deviceSpec = ${JSON.stringify(deviceSpec)};
 
 // 1. Navigate to _Components page
@@ -59,6 +59,20 @@ if (!componentsPage) {
     throw new Error("Page '_Components' not found. Run ensure_page_structure first.");
 }
 penpot.openPage(componentsPage);
+
+// Calculate dynamic offset if not provided
+let offsetY = providedOffsetY;
+if (offsetY === null) {
+    const children = Array.from(componentsPage.root.children || []);
+    let maxY = 0;
+    for (const child of children) {
+        if (child.y !== undefined && (child.height !== undefined || child.bounds?.height !== undefined)) {
+             const bottom = child.y + (child.height || child.bounds.height);
+             if (bottom > maxY) maxY = bottom;
+        }
+    }
+    offsetY = maxY + 2000; // Place well below all existing components
+}
 
 // 2. Create the screen board at the offset
 const screenBoard = penpot.createBoard();
